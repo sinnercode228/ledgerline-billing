@@ -1,7 +1,9 @@
 -- Integrity rules the database enforces on its own, whatever code writes to it.
 
 -- A journal transaction must have at least two entries summing to zero. The
--- check is deferred to COMMIT so entries can be inserted one by one.
+-- check is deferred to COMMIT so entries can be inserted one by one. That the
+-- entries share one currency is structural: see the composite foreign keys on
+-- journal_entries in 001_schema.sql.
 CREATE FUNCTION ledger_assert_balanced(p_transaction_id text) RETURNS void
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
