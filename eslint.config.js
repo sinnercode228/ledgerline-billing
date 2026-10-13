@@ -56,6 +56,8 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/unbound-method': 'off',
+      // Asymmetric matchers such as expect.stringMatching() are typed as any.
+      '@typescript-eslint/no-unsafe-assignment': 'off',
     },
   },
   {
