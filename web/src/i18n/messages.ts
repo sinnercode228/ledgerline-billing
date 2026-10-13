@@ -324,7 +324,7 @@ export const ru: Messages = {
   'clock.utc': 'UTC',
   'summary.title': 'Что произошло',
   'summary.range': 'с {from} по {to}',
-  'summary.nothing': 'Ничего не наступило.',
+  'summary.nothing': 'Ничего не происходило.',
   'summary.days': 'По дням',
   'summary.hideDays': 'Скрыть дни',
   'summary.dismiss': 'Скрыть',

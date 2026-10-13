@@ -52,7 +52,7 @@ describe('advance summary', () => {
   it('says so when nothing was due, and can be dismissed', async () => {
     const onDismiss = vi.fn();
     renderWith(<AdvanceSummary advance={{ ...week, days: [day('2026-10-14T09:00:00.000Z')] }} onDismiss={onDismiss} />, { language: 'ru' });
-    expect(screen.getByRole('region')).toHaveTextContent('Ничего не наступило.');
+    expect(screen.getByRole('region')).toHaveTextContent('Ничего не происходило.');
     await userEvent.click(screen.getByRole('button', { name: 'Скрыть' }));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
