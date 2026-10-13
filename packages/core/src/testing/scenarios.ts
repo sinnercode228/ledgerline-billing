@@ -4,6 +4,7 @@ import { ledgerScenarios } from './scenarios/ledger.js';
 import { lifecycleScenarios } from './scenarios/lifecycle.js';
 import { paymentScenarios } from './scenarios/payments.js';
 import { planChangeScenarios } from './scenarios/plan-changes.js';
+import { randomWalkScenarios } from './scenarios/random-walk.js';
 import { walkScenarios } from './scenarios/walk.js';
 
 /**
@@ -17,5 +18,6 @@ export function defineStoreScenarios(label: string, factory: StoreFactory): void
     planChangeScenarios(factory);
     ledgerScenarios(factory);
     walkScenarios(factory);
+    randomWalkScenarios(factory);
   });
 }
