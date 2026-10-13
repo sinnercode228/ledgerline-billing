@@ -167,6 +167,7 @@ export const en = {
   'customer.invoices': 'Invoices',
   'customer.noInvoices': 'No invoices yet.',
   'customer.balances': 'Account balances',
+  'customer.balancesIn': 'From the ledger, in {currency}',
   'customer.credit': 'Credit available',
   'customer.since': 'Customer since {date}',
 
@@ -206,7 +207,6 @@ export const en = {
 
   'invoices.title': 'Invoices',
   'invoices.number': 'Number',
-  'invoices.kind': 'Kind',
   'invoices.total': 'Total',
   'invoices.credit': 'Credit',
   'invoices.due': 'Due',
@@ -470,6 +470,7 @@ export const ru: Messages = {
   'customer.invoices': 'Счета',
   'customer.noInvoices': 'Счетов пока нет.',
   'customer.balances': 'Остатки по счетам учёта',
+  'customer.balancesIn': 'По главной книге, в {currency}',
   'customer.credit': 'Доступный кредит',
   'customer.since': 'Клиент с {date}',
 
@@ -509,7 +510,6 @@ export const ru: Messages = {
 
   'invoices.title': 'Счета',
   'invoices.number': 'Номер',
-  'invoices.kind': 'Тип',
   'invoices.total': 'Сумма',
   'invoices.credit': 'Кредит',
   'invoices.due': 'К оплате',

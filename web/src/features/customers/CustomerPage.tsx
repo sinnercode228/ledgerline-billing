@@ -13,7 +13,7 @@ import { SubscriptionCard } from './SubscriptionCard';
 function BalancesCard({ customer, accounts }: { customer: CustomerDetail; accounts: readonly AccountDto[] }) {
   const { t } = useI18n();
   return (
-    <Card title={t('customer.balances')} flush>
+    <Card title={t('customer.balances')} subtitle={t('customer.balancesIn', { currency: customer.currency })} flush>
       <TableScroll label={t('customer.balances')}>
         <table className="table">
           <thead>
@@ -33,18 +33,15 @@ function BalancesCard({ customer, accounts }: { customer: CustomerDetail; accoun
           <tbody>
             {accounts.map((account) => (
               <tr key={account.id}>
-                <td>
-                  {t(`account.${account.kind}`)}
-                  <span className="cell-sub mono">{account.id.split(':')[0]}</span>
+                <td>{t(`account.${account.kind}`)}</td>
+                <td className="cell-num">
+                  <Money amount={account.debits} currency={account.currency} bare />
                 </td>
                 <td className="cell-num">
-                  <Money amount={account.debits} currency={account.currency} />
+                  <Money amount={account.credits} currency={account.currency} bare />
                 </td>
                 <td className="cell-num">
-                  <Money amount={account.credits} currency={account.currency} />
-                </td>
-                <td className="cell-num">
-                  <Money amount={account.balance} currency={account.currency} />
+                  <Money amount={account.balance} currency={account.currency} bare />
                 </td>
               </tr>
             ))}
