@@ -50,6 +50,11 @@ export function mulDivFloor(value: number, numerator: number, denominator: numbe
   return Number((BigInt(value) * BigInt(numerator)) / BigInt(denominator));
 }
 
+/** Negation that never produces -0, which would otherwise leak into equality checks and JSON. */
+export function negate(amount: number): number {
+  return amount === 0 ? 0 : -amount;
+}
+
 export function formatMoney(amount: number, currency: Currency): string {
   const sign = amount < 0 ? '-' : '';
   const abs = Math.abs(assertMinorUnits(amount));
