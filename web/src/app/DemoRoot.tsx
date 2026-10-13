@@ -36,7 +36,7 @@ export function DemoRoot() {
       <App
         connection={{
           kind: 'demo',
-          saveFailed: api.saveFailed,
+          saveFailed: () => api.saveFailed,
           reset: () => {
             api.reset();
             window.location.reload();

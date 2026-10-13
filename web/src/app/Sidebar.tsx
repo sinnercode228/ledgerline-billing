@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRevision } from '../api/api-context';
 import { useI18n } from '../i18n/i18n';
 import { Button } from '../ui/Button';
 import { Dialog } from '../ui/Dialog';
@@ -21,13 +22,15 @@ function sectionOf(route: Route): string {
   return route.page;
 }
 
-function DemoNote({ reset, saveFailed }: { reset: () => void; saveFailed: boolean }) {
+function DemoNote({ reset, saveFailed }: { reset: () => void; saveFailed: () => boolean }) {
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
+  // Every change saves the world; read the outcome again after each one.
+  useRevision();
   return (
     <div className="side-note">
       <p>{t('demo.note')}</p>
-      {saveFailed && <p className="side-note-warning">{t('demo.notSaved')}</p>}
+      {saveFailed() && <p className="side-note-warning">{t('demo.notSaved')}</p>}
       <button type="button" className="link-button" onClick={() => setConfirming(true)}>
         <Icon name="reset" size={14} />
         {t('demo.reset')}

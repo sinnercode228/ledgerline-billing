@@ -25,6 +25,9 @@ function useApiState(): ApiState {
 
 export const useApi = (): LedgerlineApi => useApiState().api;
 
+/** Changes after every refresh, for components that read state outside a resource. */
+export const useRevision = (): number => useApiState().revision;
+
 /** Call after a change so every loaded resource fetches again. */
 export const useRefresh = (): (() => void) => useApiState().refresh;
 
