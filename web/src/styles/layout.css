@@ -381,6 +381,10 @@
   font-size: 12.5px;
 }
 
+.side-note .mono {
+  overflow-wrap: anywhere;
+}
+
 .side-note-warning {
   color: var(--warning);
 }
