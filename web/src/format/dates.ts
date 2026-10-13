@@ -24,6 +24,3 @@ export function formatDate(iso: string, style: DateStyle, language: Language): s
   }
   return format.format(new Date(iso));
 }
-
-/** The UTC day of an ISO instant, YYYY-MM-DD. */
-export const utcDayOf = (iso: string): string => iso.slice(0, 10);

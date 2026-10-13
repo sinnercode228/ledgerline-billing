@@ -1,4 +1,3 @@
-import type { Currency } from '@ledgerline/core';
 import { ApiError, MAX_PAGE } from '../api/client';
 import type { ListPage, PlanDto } from '../api/types';
 import type { I18n } from '../i18n/i18n';
@@ -17,10 +16,6 @@ export async function fetchAll<T>(load: (page: { limit: number; offset: number }
 
 export function planLabel(plans: readonly PlanDto[], planId: string): string {
   return plans.find((plan) => plan.id === planId)?.name ?? planId;
-}
-
-export function planPrice(plan: PlanDto, currency: Currency): number | null {
-  return plan.prices[currency] ?? null;
 }
 
 /** Engine line descriptions are English; the dashboard words them from the line kind and plan. */
