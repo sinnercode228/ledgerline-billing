@@ -13,6 +13,7 @@
     "worker": "node dist/cli/worker.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.1",
     "@ledgerline/core": "0.1.0",
     "fastify": "^5.12.6",
     "pg": "^8.23.1",

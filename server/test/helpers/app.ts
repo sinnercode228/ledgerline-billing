@@ -15,7 +15,9 @@ export interface TestApp {
   clock: Clock & { set?: (now: Date) => void };
 }
 
-export async function createTestApp(options: { store?: Store; testClock?: boolean; now?: Date } = {}): Promise<TestApp> {
+export async function createTestApp(
+  options: { store?: Store; testClock?: boolean; now?: Date; corsOrigins?: string[] } = {},
+): Promise<TestApp> {
   const now = options.now ?? new Date('2026-04-01T09:00:00Z');
   const provider = new FakePayrail({ now: () => now });
   const engine = new BillingEngine({ store: options.store ?? new MemoryStore(), provider });
@@ -33,6 +35,7 @@ export async function createTestApp(options: { store?: Store; testClock?: boolea
     webhookSecrets: [WEBHOOK_SECRET, OLD_WEBHOOK_SECRET],
     clock,
     testClockEnabled: options.testClock ?? false,
+    corsOrigins: options.corsOrigins ?? [],
     logger: false,
   });
   return { app, engine, provider, clock };

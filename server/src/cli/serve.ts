@@ -14,6 +14,7 @@ runCommand('serve', async () => {
     webhookSecrets: config.webhookSecrets,
     clock: runtime.clock,
     testClockEnabled: config.testClock,
+    corsOrigins: config.corsOrigins,
     logger: { level: config.logLevel },
   });
   onShutdown(async () => {

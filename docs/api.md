@@ -8,6 +8,7 @@ Base URL `http://localhost:3000`. JSON in, JSON out.
 - **Money** is an integer number of minor units (kopecks, cents) next to a `currency` of `RUB` or `EUR`. `299000` with `RUB` is 2 990.00 RUB.
 - **Time** is ISO 8601 in UTC. With `LEDGERLINE_TEST_CLOCK=1`, "now" is the stored test clock, not the wall clock.
 - **Lists** take `limit` (1-200, default 50) and `offset`, and return `{ "data": [...], "limit", "offset" }`.
+- **Browsers.** Origins listed in `LEDGERLINE_CORS_ORIGINS` (exact matches, such as `https://dashboard.example.com`) may call the API from a page; no origin is allowed by default.
 - **Idempotency.** `POST /v1/customers` and `POST /v1/subscriptions` require an `Idempotency-Key` header. Repeating a request with the same key returns the resource created the first time; the same key with a different body is `409 idempotency_conflict`.
 
 ## Errors

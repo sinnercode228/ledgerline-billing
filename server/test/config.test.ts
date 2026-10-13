@@ -28,6 +28,14 @@ describe('configuration', () => {
     });
   });
 
+  it('reads the origins allowed to call the API from a browser', () => {
+    const config = loadConfig({ ...base, LEDGERLINE_CORS_ORIGINS: 'https://dashboard.example.com, http://localhost:5173' });
+    expect(config.corsOrigins).toEqual(['https://dashboard.example.com', 'http://localhost:5173']);
+    expect(loadConfig(base).corsOrigins).toEqual([]);
+    expect(() => loadConfig({ ...base, LEDGERLINE_CORS_ORIGINS: '*' })).toThrow(/LEDGERLINE_CORS_ORIGINS/);
+    expect(() => loadConfig({ ...base, LEDGERLINE_CORS_ORIGINS: 'https://dashboard.example.com/app' })).toThrow(/LEDGERLINE_CORS_ORIGINS/);
+  });
+
   it('uses safe defaults for optional settings', () => {
     expect(loadConfig(base)).toMatchObject({ port: 3000, host: '0.0.0.0', testClock: false, dunning: { retryDays: [1, 3, 5] }, payrailWebhookUrl: null });
   });

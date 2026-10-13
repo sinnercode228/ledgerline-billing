@@ -1,3 +1,4 @@
+import cors from '@fastify/cors';
 import type { BillingEngine } from '@ledgerline/core';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { Clock } from '../clock.js';
@@ -17,6 +18,8 @@ export interface AppOptions {
   webhookSecrets: readonly string[];
   clock: Clock;
   testClockEnabled: boolean;
+  /** Exact browser origins allowed to call the API; empty allows none. */
+  corsOrigins?: readonly string[];
   logger?: FastifyServerOptions['logger'];
 }
 
@@ -24,6 +27,12 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 64 * 1024 });
   const context: ApiContext = { engine: options.engine, clock: options.clock, testClockEnabled: options.testClockEnabled };
   registerErrorHandling(app);
+  await app.register(cors, {
+    origin: [...(options.corsOrigins ?? [])],
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['authorization', 'content-type', 'idempotency-key'],
+    maxAge: 600,
+  });
 
   app.get('/health', () => ({ status: 'ok' }));
 

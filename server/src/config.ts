@@ -12,6 +12,8 @@ export interface Config {
   payrailWebhookUrl: string | null;
   logLevel: string;
   devMode: boolean;
+  /** Browser origins allowed to call the API, such as where the dashboard is hosted. */
+  corsOrigins: string[];
 }
 
 export class ConfigError extends Error {
@@ -80,6 +82,14 @@ export function loadConfig(env: Env): Config {
     }
   }
 
+  const corsOrigins = (env.LEDGERLINE_CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== '');
+  for (const origin of corsOrigins) {
+    if (!isOrigin(origin)) problems.push(`LEDGERLINE_CORS_ORIGINS: "${origin}" is not an origin like https://dashboard.example.com`);
+  }
+
   if (problems.length > 0) {
     throw new ConfigError(`invalid configuration:\n  - ${problems.join('\n  - ')}`);
   }
@@ -94,5 +104,15 @@ export function loadConfig(env: Env): Config {
     payrailWebhookUrl: env.LEDGERLINE_PAYRAIL_WEBHOOK_URL?.trim() || null,
     logLevel: env.LEDGERLINE_LOG_LEVEL?.trim() || 'info',
     devMode,
+    corsOrigins,
   };
+}
+
+/** Scheme, host and optional port, nothing else: an origin is matched exactly, so a path would never match. */
+function isOrigin(value: string): boolean {
+  try {
+    return new URL(value).origin === value;
+  } catch {
+    return false;
+  }
 }
