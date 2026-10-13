@@ -15,7 +15,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['*.js', '*.ts', 'packages/*/vitest.config.ts', 'server/vitest.config.ts'],
+          allowDefaultProject: ['eslint.config.js', 'vitest.config.ts', 'packages/*/vitest.config.ts', 'server/vitest.config.ts'],
         },
         tsconfigRootDir: import.meta.dirname,
       },

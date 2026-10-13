@@ -8,7 +8,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "server"
+    "server",
+    "web"
   ],
   "engines": {
     "node": ">=22.12"
