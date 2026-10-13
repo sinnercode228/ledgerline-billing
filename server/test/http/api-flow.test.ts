@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { auth, createTestApp, type TestApp } from '../helpers/app.js';
+import { testStores } from '../helpers/stores.js';
 
-describe('HTTP: billing flow through the API', () => {
+describe.each(testStores())('HTTP: billing flow through the API on %s', (_name, open) => {
   let t: TestApp;
+  let close: () => Promise<void>;
   beforeEach(async () => {
-    t = await createTestApp({ testClock: true, now: new Date('2026-02-01T00:00:00Z') });
+    const { store, close: closeStore } = await open();
+    close = closeStore;
+    t = await createTestApp({ store, testClock: true, now: new Date('2026-02-01T00:00:00Z') });
   });
-  afterEach(() => t.app.close());
+  afterEach(async () => {
+    await t.app.close();
+    await close();
+  });
 
   const post = (url: string, payload: object, headers: Record<string, string> = {}) =>
     t.app.inject({ method: 'POST', url, payload, headers: { ...auth, ...headers } });
@@ -97,6 +104,50 @@ describe('HTTP: billing flow through the API', () => {
     expect(clock.json()).toEqual({ enabled: true, now: '2026-02-22T00:00:00.000Z' });
     const events = await get('/v1/webhook-events');
     expect(events.statusCode).toBe(200);
+  });
+
+  it('manages cards, retries a past-due invoice with a new default card and refunds it', async () => {
+    const created = await post(
+      '/v1/customers',
+      { name: 'Gristmill Tools', email: 'ap@gristmill.example.com', currency: 'RUB' },
+      { 'idempotency-key': 'cus-gristmill' },
+    );
+    const { id: customerId } = created.json<{ id: string }>();
+    const declined = await post(`/v1/customers/${customerId}/payment-methods`, { card: { number: '4000000000000002', expMonth: 3, expYear: 2030 } });
+    const subscription = await post('/v1/subscriptions', { customerId, planId: 'plan_business_monthly' }, { 'idempotency-key': 'sub-gristmill' });
+    expect(subscription.json()).toMatchObject({ status: 'past_due' });
+    const { id: subscriptionId } = subscription.json<{ id: string }>();
+
+    const spare = await post(`/v1/customers/${customerId}/payment-methods`, {
+      card: { number: '4242424242424242', expMonth: 3, expYear: 2030 },
+      makeDefault: false,
+    });
+    expect(spare.json()).toMatchObject({ isDefault: false });
+    expect((await get(`/v1/subscriptions/${subscriptionId}`)).json()).toMatchObject({ status: 'past_due' });
+
+    const { id: spareId } = spare.json<{ id: string }>();
+    const switched = await post(`/v1/customers/${customerId}/payment-methods/${spareId}/default`, {});
+    expect(switched.json()).toMatchObject({ defaultPaymentMethodId: spareId });
+    expect((await get(`/v1/subscriptions/${subscriptionId}`)).json()).toMatchObject({ status: 'active' });
+
+    const customer = await get(`/v1/customers/${customerId}`);
+    expect(customer.json()).toMatchObject({
+      creditBalance: 0,
+      paymentMethods: expect.arrayContaining([
+        expect.objectContaining({ id: declined.json<{ id: string }>().id, isDefault: false }),
+        expect.objectContaining({ id: spareId, isDefault: true }),
+      ]),
+    });
+
+    const [invoice] = (await get(`/v1/invoices?subscriptionId=${subscriptionId}`)).json<{ data: Array<{ id: string }> }>().data;
+    const detail = await get(`/v1/invoices/${invoice!.id}`);
+    expect(detail.json<{ payments: Array<{ trigger: string; status: string }> }>().payments.map((p) => [p.trigger, p.status])).toEqual([
+      ['initial', 'failed'],
+      ['payment_method_updated', 'succeeded'],
+    ]);
+    const refund = await post(`/v1/invoices/${invoice!.id}/refund`, {});
+    expect(refund.json()).toMatchObject({ status: 'paid', amountRefunded: 990_000 });
+    expect((await get('/v1/ledger/trial-balance')).json()).toMatchObject({ balanced: true });
   });
 
   it('validates query parameters and plan changes', async () => {

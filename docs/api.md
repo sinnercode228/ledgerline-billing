@@ -40,7 +40,7 @@ Base URL `http://localhost:3000`. JSON in, JSON out.
 | `POST /v1/customers/:id/payment-methods` | `{ card: { number, expMonth, expYear }, makeDefault? }` | `201` payment method |
 | `POST /v1/customers/:id/payment-methods/:paymentMethodId/default` | | customer |
 
-A new card becomes the default unless `makeDefault` is `false`. Attaching a card or changing the default immediately retries open invoices of past-due subscriptions.
+A new card becomes the default unless `makeDefault` is `false`. Whenever the default card changes, open invoices of past-due subscriptions are retried right away.
 
 Payrail test cards (any future expiry): `4242 4242 4242 4242` succeeds, `4000 0000 0000 0002` is declined, `4000 0000 0000 9995` fails with insufficient funds. Other numbers are `422 card_not_supported`.
 

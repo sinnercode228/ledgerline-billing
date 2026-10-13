@@ -1,22 +1,9 @@
-import { MemoryStore, type PayrailEvent, type Store } from '@ledgerline/core';
+import type { PayrailEvent } from '@ledgerline/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { auth, createTestApp, OLD_WEBHOOK_SECRET, signedWebhook, type TestApp } from '../helpers/app.js';
-import { createTestDatabase, type TestDatabase } from '../helpers/database.js';
+import { testStores } from '../helpers/stores.js';
 
-const stores: Array<[string, () => Promise<{ store: Store; close: () => Promise<void> }>]> = [
-  ['MemoryStore', async () => ({ store: new MemoryStore(), close: async () => undefined })],
-];
-if (process.env.LEDGERLINE_TEST_DATABASE_URL) {
-  stores.push([
-    'PgStore',
-    async () => {
-      const db: TestDatabase = await createTestDatabase();
-      return { store: db.store, close: db.close };
-    },
-  ]);
-}
-
-describe.each(stores)('HTTP: Payrail webhooks on %s', (_name, makeStore) => {
+describe.each(testStores())('HTTP: Payrail webhooks on %s', (_name, makeStore) => {
   let t: TestApp;
   let close: () => Promise<void>;
   let event: PayrailEvent;
