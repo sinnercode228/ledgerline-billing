@@ -1,21 +1,35 @@
-/* An invoice prints as a document: no app chrome, black on white. */
+/* "Print" on an invoice prints the invoice itself: no app chrome, no internal records, black on white. */
 @media print {
   :root,
   :root[data-theme='dark'] {
+    color-scheme: light;
     --bg: #fff;
     --surface: #fff;
     --surface-sunken: #fff;
+    --surface-hover: #fff;
     --text: #000;
     --text-muted: #444;
+    --text-faint: #777;
     --border: #ccc;
     --border-strong: #999;
+    --accent: #1d4f8f;
+    --positive: #17703f;
+    --positive-soft: #e3f3ea;
+    --info: #1f5aa6;
+    --info-soft: #e6eefa;
+    --warning: #8f5300;
+    --warning-soft: #fbefd9;
+    --negative: #b3261e;
+    --negative-soft: #fbe7e5;
+    --neutral: #5a6270;
+    --neutral-soft: #eceef2;
     --shadow: none;
   }
 
   .topbar,
   .sidebar,
-  .page-actions,
-  .back-link,
+  .page-head,
+  .print-hidden,
   .pager,
   .chart-table-toggle {
     display: none !important;
@@ -29,13 +43,14 @@
     padding: 0;
   }
 
-  .card {
-    box-shadow: none;
-    break-inside: avoid;
+  .grid-main-side {
+    display: block;
   }
 
-  .grid-main-side {
-    grid-template-columns: 1fr;
+  .card {
+    border: 0;
+    box-shadow: none;
+    break-inside: avoid;
   }
 
   .table-scroll {

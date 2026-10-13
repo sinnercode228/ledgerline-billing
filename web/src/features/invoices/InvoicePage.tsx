@@ -3,7 +3,7 @@ import type { InvoiceDetail, JournalTransactionDto, PlanDto } from '../../api/ty
 import { useI18n, type I18n } from '../../i18n/i18n';
 import { Button } from '../../ui/Button';
 import { Card, TableScroll } from '../../ui/Card';
-import { Chip, StatusChip } from '../../ui/Chip';
+import { StatusChip } from '../../ui/Chip';
 import { Icon } from '../../ui/Icon';
 import { Loaded } from '../../ui/Loaded';
 import { Money } from '../../ui/Money';
@@ -172,7 +172,7 @@ function InvoiceDocument({ invoice, plans, customer }: { invoice: InvoiceDetail;
 function Payments({ invoice }: { invoice: InvoiceDetail }) {
   const { t } = useI18n();
   return (
-    <Card title={t('invoice.payments')} flush>
+    <Card title={t('invoice.payments')} flush className="print-hidden">
       {invoice.payments.length === 0 ? (
         <p className="empty">{t('invoice.noPayments')}</p>
       ) : (
@@ -218,9 +218,9 @@ function Payments({ invoice }: { invoice: InvoiceDetail }) {
 }
 
 function Timeline({ invoice, journal }: { invoice: InvoiceDetail; journal: readonly JournalTransactionDto[] }) {
-  const { t, date } = useI18n();
+  const { t } = useI18n();
   return (
-    <Card title={t('invoice.timeline')}>
+    <Card title={t('invoice.timeline')} className="print-hidden">
       <ol className="timeline timeline-with-time">
         {invoiceTimeline(invoice, journal).map((event, i) => (
           <li key={`${event.kind}-${i}`} className={toneOf(event)}>
@@ -233,9 +233,6 @@ function Timeline({ invoice, journal }: { invoice: InvoiceDetail; journal: reado
           </li>
         ))}
       </ol>
-      {invoice.status === 'open' && invoice.firstFailedAt && (
-        <Chip tone="warning">{invoice.nextRetryAt ? t('invoice.nextRetry', { date: date(invoice.nextRetryAt) }) : t('overview.dunningOver')}</Chip>
-      )}
     </Card>
   );
 }
@@ -270,7 +267,7 @@ export function InvoicePage({ id }: { id: string }) {
             <Timeline invoice={invoice} journal={journal} />
           </div>
           <Payments invoice={invoice} />
-          <Card title={t('ledger.journal')} flush className="no-print-break">
+          <Card title={t('ledger.journal')} flush className="print-hidden">
             <JournalEntries transactions={[...journal].reverse()} />
           </Card>
         </>
