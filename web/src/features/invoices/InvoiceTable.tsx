@@ -6,7 +6,10 @@ import { Money } from '../../ui/Money';
 import { DateText, Mono, PeriodText, RouteLink } from '../../ui/bits';
 import type { Directory } from '../directory';
 
-/** Invoices as a dense table; the customer column is left out on a customer's own page. */
+/**
+ * Invoices as a dense table; the customer column is left out on a customer's own page.
+ * Most invoices bill a period of a subscription, so only prorations are marked.
+ */
 export function InvoiceTable({ invoices, directory, showCustomer = true }: { invoices: readonly InvoiceDto[]; directory?: Directory | undefined; showCustomer?: boolean }) {
   const { t } = useI18n();
   return (
@@ -16,7 +19,6 @@ export function InvoiceTable({ invoices, directory, showCustomer = true }: { inv
           <tr>
             <th scope="col">{t('invoices.number')}</th>
             {showCustomer && <th scope="col">{t('common.customer')}</th>}
-            <th scope="col">{t('invoices.kind')}</th>
             <th scope="col">{t('common.period')}</th>
             <th scope="col">{t('common.status')}</th>
             <th scope="col" className="cell-num">
@@ -41,13 +43,13 @@ export function InvoiceTable({ invoices, directory, showCustomer = true }: { inv
                 <RouteLink to={{ page: 'invoice', id: invoice.id }}>
                   <Mono>{invoice.number ?? invoice.id}</Mono>
                 </RouteLink>
+                {invoice.kind === 'proration' && <span className="cell-sub">{t('invoiceKind.proration')}</span>}
               </td>
               {showCustomer && (
-                <td className="cell-name">
+                <td className="nowrap">
                   <RouteLink to={{ page: 'customer', id: invoice.customerId }}>{directory?.customers.get(invoice.customerId)?.name ?? invoice.customerId}</RouteLink>
                 </td>
               )}
-              <td>{t(`invoiceKind.${invoice.kind}`)}</td>
               <td>
                 <PeriodText start={invoice.periodStart} end={invoice.periodEnd} />
               </td>

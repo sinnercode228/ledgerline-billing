@@ -110,7 +110,6 @@ export const en = {
   'account.provider_clearing': 'Payrail clearing',
   'account.bad_debt': 'Bad debt expense',
 
-  'invoiceKind.cycle': 'Subscription',
   'invoiceKind.proration': 'Proration',
   'line.plan': '{plan}',
   'line.proration_credit': 'Unused time on {plan}',
@@ -414,7 +413,6 @@ export const ru: Messages = {
   'account.provider_clearing': 'Транзитный счёт Payrail',
   'account.bad_debt': 'Безнадёжные долги',
 
-  'invoiceKind.cycle': 'Подписка',
   'invoiceKind.proration': 'Перерасчёт',
   'line.plan': '{plan}',
   'line.proration_credit': 'Неиспользованное время: {plan}',
