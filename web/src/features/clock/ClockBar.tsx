@@ -22,6 +22,17 @@ function stepFrom(now: string, step: StepName): ClockStep {
   }
 }
 
+/** The browser's clock, read again twice a minute, for a server that bills on real time. */
+function useWallClock(active: boolean): string {
+  const [now, setNow] = useState(() => new Date().toISOString());
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(new Date().toISOString()), 30_000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
   return (
@@ -71,8 +82,10 @@ export function ClockBar() {
     return () => observer.disconnect();
   }, []);
 
-  const now = clock.data?.now ?? null;
   const enabled = clock.data?.enabled ?? false;
+  const wallClock = useWallClock(clock.data !== undefined && !enabled);
+  // Without a test clock the server bills on real time, which the browser knows as well.
+  const now = clock.data === undefined ? null : (clock.data.now ?? wallClock);
 
   async function move(step: StepName) {
     if (!now) return;
