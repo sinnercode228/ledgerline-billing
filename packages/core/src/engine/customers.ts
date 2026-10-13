@@ -45,7 +45,7 @@ export async function attachPaymentMethod(
   customerId: string,
   card: CardDetails,
   now: Date,
-  options: { makeDefault?: boolean } = {},
+  options: { makeDefault?: boolean | undefined } = {},
 ): Promise<PaymentMethod> {
   await ctx.store.run((tx) => requireCustomer(tx, customerId));
   const tokenized = await ctx.provider.tokenizeCard(card, now);

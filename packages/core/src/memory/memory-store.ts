@@ -303,7 +303,7 @@ class MemoryTx implements StoreTx {
     const totals = this.s.accountTotals.get(accountId);
     return totals ? totals.debits - totals.credits : 0;
   }
-  async listAccountBalances(filter: { customerId?: string }): Promise<AccountBalance[]> {
+  async listAccountBalances(filter: { customerId?: string | undefined }): Promise<AccountBalance[]> {
     const accounts = [...this.s.accounts.values()].filter((a) => !filter.customerId || a.customerId === filter.customerId);
     const balances = balancesFromEntries(accounts, []);
     for (const row of balances) {

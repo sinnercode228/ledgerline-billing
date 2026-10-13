@@ -7,26 +7,27 @@ import type { Plan } from '../plans.js';
 import type { Subscription, SubscriptionStatus } from '../subscription.js';
 import type { WebhookEventRecord } from '../webhook-events.js';
 
+// Filters treat an undefined field as "no filter", so validated query objects pass straight through.
 export interface Page {
-  limit?: number;
-  offset?: number;
+  limit?: number | undefined;
+  offset?: number | undefined;
 }
 
 export interface SubscriptionFilter extends Page {
-  customerId?: string;
-  status?: SubscriptionStatus;
+  customerId?: string | undefined;
+  status?: SubscriptionStatus | undefined;
 }
 
 export interface InvoiceFilter extends Page {
-  customerId?: string;
-  subscriptionId?: string;
-  status?: InvoiceStatus;
+  customerId?: string | undefined;
+  subscriptionId?: string | undefined;
+  status?: InvoiceStatus | undefined;
 }
 
 export interface JournalFilter extends Page {
-  accountId?: string;
-  invoiceId?: string;
-  kind?: PostingKind;
+  accountId?: string | undefined;
+  invoiceId?: string | undefined;
+  kind?: PostingKind | undefined;
 }
 
 export interface DailyRevenue {
@@ -100,7 +101,7 @@ export interface StoreTx {
   /** Append-only. The store refuses to commit a transaction whose entries do not sum to zero. */
   insertJournalTransaction(transaction: JournalTransaction): Promise<void>;
   getAccountBalance(accountId: string): Promise<number>;
-  listAccountBalances(filter: { customerId?: string }): Promise<AccountBalance[]>;
+  listAccountBalances(filter: { customerId?: string | undefined }): Promise<AccountBalance[]>;
   listJournal(filter: JournalFilter): Promise<JournalTransaction[]>;
   dailyRevenue(range: { from: Date; to: Date }): Promise<DailyRevenue[]>;
 

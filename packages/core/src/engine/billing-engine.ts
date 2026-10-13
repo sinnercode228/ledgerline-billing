@@ -45,7 +45,7 @@ export class BillingEngine {
     return createCustomer(this.ctx, input, now, options.idempotencyKey);
   }
 
-  attachPaymentMethod(customerId: string, card: CardDetails, now: Date, options: { makeDefault?: boolean } = {}): Promise<PaymentMethod> {
+  attachPaymentMethod(customerId: string, card: CardDetails, now: Date, options: { makeDefault?: boolean | undefined } = {}): Promise<PaymentMethod> {
     return attachPaymentMethod(this.ctx, customerId, card, now, options);
   }
 
@@ -132,7 +132,7 @@ export class BillingEngine {
     return this.ctx.store.run((tx) => tx.listInvoices(filter));
   }
 
-  ledgerAccounts(filter: { customerId?: string } = {}): Promise<AccountBalance[]> {
+  ledgerAccounts(filter: { customerId?: string | undefined } = {}): Promise<AccountBalance[]> {
     return this.ctx.store.run((tx) => tx.listAccountBalances(filter));
   }
 

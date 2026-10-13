@@ -458,7 +458,7 @@ class PgTx implements StoreTx {
     ]);
     return toSafeInteger(row?.balance ?? '0', 'balance');
   }
-  async listAccountBalances(filter: { customerId?: string }): Promise<AccountBalance[]> {
+  async listAccountBalances(filter: { customerId?: string | undefined }): Promise<AccountBalance[]> {
     const rows = await this.rows<AccountRow & { debits: string; credits: string }>(
       `SELECT a.*,
               coalesce(sum(e.amount) FILTER (WHERE e.amount > 0), 0) AS debits,

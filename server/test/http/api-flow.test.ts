@@ -1,0 +1,109 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { auth, createTestApp, type TestApp } from '../helpers/app.js';
+
+describe('HTTP: billing flow through the API', () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await createTestApp({ testClock: true, now: new Date('2026-02-01T00:00:00Z') });
+  });
+  afterEach(() => t.app.close());
+
+  const post = (url: string, payload: object, headers: Record<string, string> = {}) =>
+    t.app.inject({ method: 'POST', url, payload, headers: { ...auth, ...headers } });
+  const get = (url: string) => t.app.inject({ method: 'GET', url, headers: auth });
+
+  it('subscribes, prorates an upgrade, bills renewals and exposes the ledger and metrics', async () => {
+    const customer = await post(
+      '/v1/customers',
+      { name: 'Wayfarer Maps', email: 'finance@wayfarer.example.com', currency: 'EUR' },
+      { 'idempotency-key': 'cus-wayfarer' },
+    );
+    expect(customer.statusCode).toBe(201);
+    const { id: customerId } = customer.json<{ id: string }>();
+    const replay = await post(
+      '/v1/customers',
+      { name: 'Wayfarer Maps', email: 'finance@wayfarer.example.com', currency: 'EUR' },
+      { 'idempotency-key': 'cus-wayfarer' },
+    );
+    expect(replay.json<{ id: string }>().id).toBe(customerId);
+
+    const card = await post(`/v1/customers/${customerId}/payment-methods`, { card: { number: '4242 4242 4242 4242', expMonth: 12, expYear: 2029 } });
+    expect(card.statusCode).toBe(201);
+    expect(card.json()).toMatchObject({ brand: 'visa', last4: '4242', isDefault: true });
+    expect(card.json()).not.toHaveProperty('providerToken');
+
+    const subscription = await post('/v1/subscriptions', { customerId, planId: 'plan_starter_monthly' }, { 'idempotency-key': 'sub-wayfarer' });
+    expect(subscription.statusCode).toBe(201);
+    const { id: subscriptionId } = subscription.json<{ id: string }>();
+    expect(subscription.json()).toMatchObject({ status: 'trialing', trialEnd: '2026-02-15T00:00:00.000Z' });
+
+    const advanced = await post('/v1/test-clock/advance', { days: 21 });
+    expect(advanced.statusCode).toBe(200);
+    expect(advanced.json()).toMatchObject({ from: '2026-02-01T00:00:00.000Z', to: '2026-02-22T00:00:00.000Z' });
+    expect(advanced.json<{ days: unknown[] }>().days).toHaveLength(21);
+
+    const preview = await post(`/v1/subscriptions/${subscriptionId}/plan-change/preview`, { planId: 'plan_team_monthly' });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({
+      effect: 'invoice_now',
+      credit: 675,
+      charge: 2175,
+      net: 1500,
+      lines: [
+        { kind: 'proration_credit', amount: -675, periodStart: '2026-02-22T00:00:00.000Z' },
+        { kind: 'proration_charge', amount: 2175 },
+      ],
+    });
+    expect((await get(`/v1/subscriptions/${subscriptionId}`)).json()).toMatchObject({ planId: 'plan_starter_monthly' });
+
+    const change = await post(`/v1/subscriptions/${subscriptionId}/plan-change`, { planId: 'plan_team_monthly' });
+    expect(change.statusCode).toBe(200);
+    expect(change.json()).toMatchObject({ subscription: { planId: 'plan_team_monthly' }, invoice: { kind: 'proration', total: 1500, status: 'paid' } });
+
+    const invoices = await get(`/v1/invoices?subscriptionId=${subscriptionId}`);
+    const [latest] = invoices.json<{ data: Array<{ id: string; number: string }> }>().data;
+    const detail = await get(`/v1/invoices/${latest!.id}`);
+    expect(detail.json()).toMatchObject({
+      number: 'LL-2026-000002',
+      lines: [{ description: 'Unused time on Starter' }, { description: 'Remaining time on Team' }],
+      payments: [{ attempt: 1, status: 'succeeded' }],
+    });
+
+    const trial = await get('/v1/ledger/trial-balance');
+    expect(trial.json()).toEqual({ balanced: true, currencies: [{ currency: 'EUR', debits: 4800, credits: 4800, net: 0 }] });
+    const accounts = await get(`/v1/ledger/accounts?customerId=${customerId}`);
+    expect(accounts.json<{ data: Array<{ id: string; balance: number }> }>().data.map((a) => a.id).sort()).toEqual([
+      `customer_credit:${customerId}`,
+      `receivable:${customerId}`,
+    ]);
+    const journal = await get('/v1/ledger/journal?kind=invoice_finalized');
+    expect(journal.json<{ data: Array<{ entries: unknown[] }> }>().data).toHaveLength(2);
+
+    const metrics = await get('/v1/metrics');
+    expect(metrics.json()).toMatchObject({
+      mrr: [
+        { currency: 'RUB', amount: 0 },
+        { currency: 'EUR', amount: 2900 },
+      ],
+      subscriptions: { active: 1 },
+    });
+
+    const cancel = await post(`/v1/subscriptions/${subscriptionId}/cancel`, {});
+    expect(cancel.json()).toMatchObject({ cancelAtPeriodEnd: true });
+    const resume = await post(`/v1/subscriptions/${subscriptionId}/resume`, {});
+    expect(resume.json()).toMatchObject({ cancelAtPeriodEnd: false });
+
+    const clock = await get('/v1/test-clock');
+    expect(clock.json()).toEqual({ enabled: true, now: '2026-02-22T00:00:00.000Z' });
+    const events = await get('/v1/webhook-events');
+    expect(events.statusCode).toBe(200);
+  });
+
+  it('validates query parameters and plan changes', async () => {
+    expect((await get('/v1/invoices?limit=0')).statusCode).toBe(400);
+    expect((await get('/v1/invoices?status=lost')).statusCode).toBe(400);
+    expect((await get('/v1/customers?limit=500')).json()).toMatchObject({ error: { code: 'validation_failed' } });
+    expect((await post('/v1/test-clock/advance', { days: 0 })).statusCode).toBe(400);
+    expect((await post('/v1/test-clock/advance', { to: '2020-01-01T00:00:00Z' })).json()).toMatchObject({ error: { code: 'invalid_argument' } });
+  });
+});
