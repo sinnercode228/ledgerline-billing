@@ -70,6 +70,8 @@ A plan change keeps the billing interval. The preview returns exactly what apply
   "credit": 675,
   "charge": 2175,
   "net": 1500,
+  "creditApplied": 0,
+  "amountDue": 1500,
   "lines": [
     { "kind": "proration_credit", "description": "Unused time on Starter", "amount": -675 },
     { "kind": "proration_charge", "description": "Remaining time on Team", "amount": 2175 }
@@ -77,7 +79,7 @@ A plan change keeps the billing interval. The preview returns exactly what apply
 }
 ```
 
-`credit = floor(old price × remaining seconds / period seconds)`, `charge` likewise with the new price. A positive `net` (`invoice_now`) is invoiced and charged at once; a negative one (`customer_credit`) becomes customer credit that the next invoice spends; `trial_switch` changes the plan of a trialing subscription without moving money.
+`credit = floor(old price × remaining seconds / period seconds)`, `charge` likewise with the new price. A positive `net` (`invoice_now`) is invoiced and charged at once, less any customer credit: `creditApplied` is the part the credit pays and `amountDue` what the card is charged; a negative one (`customer_credit`) becomes customer credit that the next invoice spends; `trial_switch` changes the plan of a trialing subscription without moving money.
 
 ## Invoices
 

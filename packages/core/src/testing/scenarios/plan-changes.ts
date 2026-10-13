@@ -43,6 +43,26 @@ export function planChangeScenarios(factory: StoreFactory): void {
       await expectBalancedLedger(world.engine);
     });
 
+    it('shows in the preview how much of an upgrade the customer credit pays', async () => {
+      const world = await BillingWorld.create(store(), at('2026-02-01T00:00:00Z'));
+      const { customer } = await world.customer('Alder & Finch', 'EUR', 'succeeds');
+      const subscription = await world.engine.createSubscription({ customerId: customer.id, planId: 'plan_team_monthly' }, world.now);
+      // Period is Feb 15 - Mar 15 (28 days); 7 days are left.
+      await world.advanceTo(at('2026-03-08T00:00:00Z'));
+      const downgrade = await world.engine.previewPlanChange(subscription.id, 'plan_starter_monthly', world.now);
+      expect(downgrade).toMatchObject({ effect: 'customer_credit', net: -500, creditApplied: 0, amountDue: 0 });
+      await world.engine.changePlan(subscription.id, 'plan_starter_monthly', world.now);
+
+      const upgrade = await world.engine.previewPlanChange(subscription.id, 'plan_business_monthly', world.now);
+      expect(upgrade).toMatchObject({ effect: 'invoice_now', credit: 225, charge: 2_475, net: 2_250, creditApplied: 500, amountDue: 1_750 });
+      const { invoice } = await world.engine.changePlan(subscription.id, 'plan_business_monthly', world.now);
+      expect(invoice).toMatchObject({ total: 2_250, creditApplied: 500, amountDue: 1_750, amountPaid: 1_750, status: 'paid' });
+
+      await world.engine.changePlan(subscription.id, 'plan_starter_monthly', world.now);
+      const coveredByCredit = await world.engine.previewPlanChange(subscription.id, 'plan_team_monthly', world.now);
+      expect(coveredByCredit).toMatchObject({ net: 500, creditApplied: 500, amountDue: 0 });
+    });
+
     it('invoices a second upgrade made at the same instant as an earlier one', async () => {
       // On the test clock time stands still between requests, so this is an ordinary sequence there.
       const world = await BillingWorld.create(store(), at('2026-02-01T00:00:00Z'));

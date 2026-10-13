@@ -38,6 +38,8 @@ const upgrade: PlanChangePreviewDto = {
   credit: 675,
   charge: 2_175,
   net: 1_500,
+  creditApplied: 0,
+  amountDue: 1_500,
   effect: 'invoice_now',
   lines: [
     { kind: 'proration_credit', description: 'Unused time on Starter', amount: -675, planId: 'plan_starter_monthly', periodStart: '2026-02-22T00:00:00.000Z', periodEnd: '2026-03-15T00:00:00.000Z' },
@@ -79,6 +81,30 @@ describe('ChangePlanDialog', () => {
     await userEvent.click(confirm);
     expect(changePlan).toHaveBeenCalledWith('sub_starter', 'plan_team_monthly');
     await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+  });
+
+  it('shows how much of an upgrade the customer credit pays and what the card is charged', async () => {
+    const previewPlanChange = vi.fn(async () => ({ ...upgrade, creditApplied: 500, amountDue: 1_000 }));
+    renderWith(<ChangePlanDialog subscription={subscription} plans={plans} onClose={() => undefined} onChanged={() => undefined} />, {
+      api: { previewPlanChange },
+    });
+    const dialog = screen.getByRole('dialog');
+    await userEvent.selectOptions(within(dialog).getByRole('combobox'), 'plan_team_monthly');
+    const rows = within(await within(dialog).findByRole('table')).getAllByRole('row').map((row) => row.textContent);
+    expect(rows.slice(2)).toEqual([expect.stringContaining('€15.00'), expect.stringContaining('-€5.00'), expect.stringContaining('€10.00')]);
+    expect(rows[3]).toContain('Customer credit');
+    expect(rows[4]).toContain('Charged to the card now');
+  });
+
+  it('says when the customer credit pays an upgrade in full', async () => {
+    const previewPlanChange = vi.fn(async () => ({ ...upgrade, creditApplied: 1_500, amountDue: 0 }));
+    renderWith(<ChangePlanDialog subscription={subscription} plans={plans} onClose={() => undefined} onChanged={() => undefined} />, {
+      api: { previewPlanChange },
+      language: 'ru',
+    });
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'plan_team_monthly');
+    expect(await screen.findByText('Счёт выставляется сейчас и оплачивается из кредита клиента.')).toBeInTheDocument();
+    expect(screen.queryByText('Счёт выставляется и оплачивается сразу.')).not.toBeInTheDocument();
   });
 
   it('explains a refusal from the engine and keeps the change from being confirmed', async () => {

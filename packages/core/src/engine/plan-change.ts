@@ -1,6 +1,7 @@
 import { truncateToSecond } from '../calendar.js';
 import { BillingError } from '../errors.js';
-import type { Invoice, InvoiceLine } from '../invoice.js';
+import type { Customer } from '../customer.js';
+import { invoiceAmounts, type Invoice, type InvoiceLine } from '../invoice.js';
 import { postings } from '../ledger.js';
 import type { Currency } from '../money.js';
 import { priceFor } from '../plans.js';
@@ -10,7 +11,7 @@ import type { Subscription } from '../subscription.js';
 import { executeCharge, startPayment, type ChargeIntent } from './charging.js';
 import type { EngineContext } from './context.js';
 import { issueInvoice } from './invoicing.js';
-import { post } from './ledger-ops.js';
+import { availableCredit, post } from './ledger-ops.js';
 import { requireCustomer, requireInvoice, requirePlan, requireSubscription } from './lookups.js';
 
 export type PlanChangeEffect = 'invoice_now' | 'customer_credit' | 'no_charge' | 'trial_switch';
@@ -26,11 +27,14 @@ export interface PlanChangePreview {
   credit: number;
   charge: number;
   net: number;
+  /** Of an `invoice_now` net, the part the customer's credit pays and the part charged to the card at once. */
+  creditApplied: number;
+  amountDue: number;
   effect: PlanChangeEffect;
   lines: InvoiceLine[];
 }
 
-async function quote(tx: StoreTx, subscription: Subscription, toPlanId: string, now: Date): Promise<PlanChangePreview> {
+async function quote(tx: StoreTx, subscription: Subscription, customer: Customer, toPlanId: string, now: Date): Promise<PlanChangePreview> {
   if (subscription.status !== 'active' && subscription.status !== 'trialing') {
     throw new BillingError('subscription_not_changeable', `a ${subscription.status} subscription cannot change plans`);
   }
@@ -52,7 +56,8 @@ async function quote(tx: StoreTx, subscription: Subscription, toPlanId: string, 
   };
   const toPrice = priceFor(to, subscription.currency);
   if (subscription.status === 'trialing') {
-    return { ...base, changeAt: truncateToSecond(now), credit: 0, charge: 0, net: 0, effect: 'trial_switch', lines: [] };
+    const nothing = { credit: 0, charge: 0, net: 0, creditApplied: 0, amountDue: 0 };
+    return { ...base, ...nothing, changeAt: truncateToSecond(now), effect: 'trial_switch', lines: [] };
   }
   const q = quotePlanChange({
     periodStart: subscription.currentPeriodStart,
@@ -62,11 +67,17 @@ async function quote(tx: StoreTx, subscription: Subscription, toPlanId: string, 
     to: { planId: to.id, name: to.name, price: toPrice },
   });
   const effect: PlanChangeEffect = q.net > 0 ? 'invoice_now' : q.net < 0 ? 'customer_credit' : 'no_charge';
-  return { ...base, changeAt: q.changeAt, credit: q.credit, charge: q.charge, net: q.net, effect, lines: q.lines };
+  // The same split finalizing the proration invoice makes, under the same customer lock when applied.
+  const { creditApplied, amountDue } =
+    effect === 'invoice_now' ? invoiceAmounts(q.lines, await availableCredit(tx, customer)) : { creditApplied: 0, amountDue: 0 };
+  return { ...base, changeAt: q.changeAt, credit: q.credit, charge: q.charge, net: q.net, creditApplied, amountDue, effect, lines: q.lines };
 }
 
 export async function previewPlanChange(ctx: EngineContext, subscriptionId: string, toPlanId: string, now: Date): Promise<PlanChangePreview> {
-  return ctx.store.run(async (tx) => quote(tx, await requireSubscription(tx, subscriptionId), toPlanId, now));
+  return ctx.store.run(async (tx) => {
+    const subscription = await requireSubscription(tx, subscriptionId);
+    return quote(tx, subscription, await requireCustomer(tx, subscription.customerId), toPlanId, now);
+  });
 }
 
 /**
@@ -82,7 +93,7 @@ export async function changePlan(
   const applied = await ctx.store.run(async (tx) => {
     const subscription = await requireSubscription(tx, subscriptionId, 'for_update');
     const customer = await requireCustomer(tx, subscription.customerId, 'for_update');
-    const preview = await quote(tx, subscription, toPlanId, now);
+    const preview = await quote(tx, subscription, customer, toPlanId, now);
     const updated: Subscription = { ...subscription, planId: toPlanId, updatedAt: now };
     await tx.updateSubscription(updated);
 

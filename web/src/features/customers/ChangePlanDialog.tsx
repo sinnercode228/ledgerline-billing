@@ -16,6 +16,9 @@ interface ChangePlanDialogProps {
   onChanged: (result: PlanChangeResultDto) => void;
 }
 
+/** An upgrade the customer's credit covers completely: invoiced, but nothing reaches the card. */
+const paidFromCredit = (preview: PlanChangePreviewDto) => preview.effect === 'invoice_now' && preview.amountDue === 0;
+
 type Preview = { planId: string } & ({ state: 'loading' } | { state: 'ready'; preview: PlanChangePreviewDto } | { state: 'refused'; message: string });
 
 /**
@@ -102,7 +105,7 @@ export function ChangePlanDialog({ subscription, plans, onClose, onChanged }: Ch
         <div className="preview">
           <h3>{t('planChange.preview')}</h3>
           <p className="preview-effect">
-            <span>{t(`planChange.effect.${preview.preview.effect}`)}</span>{' '}
+            <span>{paidFromCredit(preview.preview) ? t('planChange.paidFromCredit') : t(`planChange.effect.${preview.preview.effect}`)}</span>{' '}
             <span className="muted">{t('planChange.changeAt', { date: date(preview.preview.changeAt) })}</span>
           </p>
           {preview.preview.lines.length > 0 && (
@@ -125,6 +128,22 @@ export function ChangePlanDialog({ subscription, plans, onClose, onChanged }: Ch
                     <Money amount={preview.preview.net} currency={preview.preview.currency} />
                   </td>
                 </tr>
+                {preview.preview.creditApplied > 0 && (
+                  <>
+                    <tr>
+                      <td>{t('planChange.creditApplied')}</td>
+                      <td className="cell-num">
+                        <Money amount={-preview.preview.creditApplied} currency={preview.preview.currency} />
+                      </td>
+                    </tr>
+                    <tr className="row-total">
+                      <th scope="row">{t('planChange.chargedNow')}</th>
+                      <td className="cell-num">
+                        <Money amount={preview.preview.amountDue} currency={preview.preview.currency} />
+                      </td>
+                    </tr>
+                  </>
+                )}
               </tbody>
             </table>
           )}
