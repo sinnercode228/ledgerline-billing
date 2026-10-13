@@ -1,5 +1,5 @@
 import type { Customer } from '../customer.js';
-import { newId } from '../ids.js';
+import type { IdGenerator } from '../ids.js';
 import {
   assertInvoiceTransition,
   formatInvoiceNumber,
@@ -15,6 +15,7 @@ import type { Subscription } from '../subscription.js';
 import { availableCredit, post } from './ledger-ops.js';
 
 export function draftInvoice(input: {
+  id: string;
   subscription: Subscription;
   kind: InvoiceKind;
   periodStart: Date;
@@ -24,7 +25,7 @@ export function draftInvoice(input: {
 }): Invoice {
   const total = sumMinor(input.lines.map((line) => line.amount));
   return {
-    id: newId('in'),
+    id: input.id,
     number: null,
     customerId: input.subscription.customerId,
     subscriptionId: input.subscription.id,
@@ -56,7 +57,7 @@ export function draftInvoice(input: {
  * customer credit, all inside the caller's transaction. The caller must hold
  * the customer lock so two invoices cannot spend the same credit.
  */
-export async function finalizeInvoice(tx: StoreTx, invoice: Invoice, customer: Customer, now: Date): Promise<Invoice> {
+export async function finalizeInvoice(tx: StoreTx, invoice: Invoice, customer: Customer, now: Date, ids: IdGenerator): Promise<Invoice> {
   assertInvoiceTransition(invoice.status, 'open');
   const year = now.getUTCFullYear();
   const number = formatInvoiceNumber(year, await tx.nextInvoiceSequence(year));
@@ -64,10 +65,10 @@ export async function finalizeInvoice(tx: StoreTx, invoice: Invoice, customer: C
   const refs = { customerId: customer.id, currency: invoice.currency, subscriptionId: invoice.subscriptionId, invoiceId: invoice.id };
 
   if (amounts.total > 0) {
-    await post(tx, postings.invoiceFinalized({ ...refs, amount: amounts.total, invoiceNumber: number }), now);
+    await post(tx, postings.invoiceFinalized({ ...refs, amount: amounts.total, invoiceNumber: number }), now, ids);
   }
   if (amounts.creditApplied > 0) {
-    await post(tx, postings.creditApplied({ ...refs, amount: amounts.creditApplied }), now);
+    await post(tx, postings.creditApplied({ ...refs, amount: amounts.creditApplied }), now, ids);
   }
 
   const open: Invoice = { ...invoice, ...amounts, number, status: 'open', finalizedAt: now };
@@ -79,11 +80,12 @@ export async function finalizeInvoice(tx: StoreTx, invoice: Invoice, customer: C
 export async function issueInvoice(
   tx: StoreTx,
   customer: Customer,
-  input: Parameters<typeof draftInvoice>[0],
+  ids: IdGenerator,
+  input: Omit<Parameters<typeof draftInvoice>[0], 'id'>,
 ): Promise<Invoice> {
-  const draft = draftInvoice(input);
+  const draft = draftInvoice({ ...input, id: ids('in') });
   await tx.insertInvoice(draft);
-  return finalizeInvoice(tx, draft, customer, input.now);
+  return finalizeInvoice(tx, draft, customer, input.now, ids);
 }
 
 export function outstanding(invoice: Invoice): number {

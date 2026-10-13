@@ -41,6 +41,7 @@ export async function refundInvoice(ctx: EngineContext, invoiceId: string, now: 
         amount: target.amount,
       }),
       now,
+      ctx.ids,
     );
     const refunded = { ...invoice, amountRefunded: target.amount };
     await tx.updateInvoice(refunded);

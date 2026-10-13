@@ -1,4 +1,3 @@
-import { newId } from '../ids.js';
 import { isPaymentEventType, readPaymentObject, type PayrailEvent } from '../payrail/events.js';
 import type { StoreTx } from '../ports/store.js';
 import type { WebhookEventRecord, WebhookOutcome } from '../webhook-events.js';
@@ -18,7 +17,7 @@ export interface ReceiveResult {
 export async function receiveProviderEvent(ctx: EngineContext, event: PayrailEvent, now: Date): Promise<ReceiveResult> {
   return ctx.store.run(async (tx) => {
     const record: WebhookEventRecord = {
-      id: newId('whe'),
+      id: ctx.ids('whe'),
       providerEventId: event.id,
       type: event.type,
       payload: event,

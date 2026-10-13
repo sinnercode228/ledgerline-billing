@@ -59,10 +59,10 @@ export function ledgerScenarios(factory: StoreFactory): void {
       const world = await BillingWorld.create(store(), at('2026-01-10T00:00:00Z'));
       const { subscription } = await trialingSubscription(world);
       const period = { periodStart: at('2026-01-24T00:00:00Z'), periodEnd: at('2026-02-24T00:00:00Z') };
-      const draft = () => draftInvoice({ subscription, kind: 'cycle', ...period, lines: [], now: world.now });
+      const draft = () => draftInvoice({ id: newId('in'), subscription, kind: 'cycle', ...period, lines: [], now: world.now });
       await world.store.run((tx) => tx.insertInvoice(draft()));
       await expect(world.store.run((tx) => tx.insertInvoice(draft()))).rejects.toMatchObject({ code: 'duplicate_invoice' });
-      await world.store.run((tx) => tx.insertInvoice(draftInvoice({ subscription, kind: 'proration', ...period, lines: [], now: world.now })));
+      await world.store.run((tx) => tx.insertInvoice(draftInvoice({ id: newId('in'), subscription, kind: 'proration', ...period, lines: [], now: world.now })));
     });
 
     it('numbers 20 concurrent finalizations without gaps, even when others roll back', async () => {
@@ -70,6 +70,7 @@ export function ledgerScenarios(factory: StoreFactory): void {
       const { customer, subscription } = await trialingSubscription(world);
       const drafts = Array.from({ length: 25 }, (_, i) =>
         draftInvoice({
+          id: newId('in'),
           subscription,
           kind: 'cycle',
           periodStart: addDays(world.now, i),
@@ -85,7 +86,7 @@ export function ledgerScenarios(factory: StoreFactory): void {
       const results = await Promise.allSettled(
         drafts.map((draft, i) =>
           world.store.run(async (tx) => {
-            const finalized = await finalizeInvoice(tx, draft, (await tx.getCustomer(customer.id))!, world.now);
+            const finalized = await finalizeInvoice(tx, draft, (await tx.getCustomer(customer.id))!, world.now, newId);
             if (i % 5 === 4) throw new Error('crash after taking a number');
             return finalized.number;
           }),
@@ -96,7 +97,7 @@ export function ledgerScenarios(factory: StoreFactory): void {
 
       const stillDraft = await world.engine.listInvoices({ status: 'draft' });
       expect(stillDraft).toHaveLength(5);
-      const next = await world.store.run(async (tx) => finalizeInvoice(tx, stillDraft[0]!, (await tx.getCustomer(customer.id))!, world.now));
+      const next = await world.store.run(async (tx) => finalizeInvoice(tx, stillDraft[0]!, (await tx.getCustomer(customer.id))!, world.now, newId));
       expect(next.number).toBe('LL-2026-000021');
       await expectBalancedLedger(world.engine);
     });

@@ -46,6 +46,8 @@ export interface FakePayrailOptions {
    * later calls with the same idempotency key.
    */
   mode?: 'sync' | 'async';
+  /** Salt for card tokens; a seeded source makes tokens reproducible. */
+  random?: () => number;
 }
 
 const encoder = new TextEncoder();
@@ -81,12 +83,14 @@ export class FakePayrail implements PaymentProvider {
   private readonly listeners = new Set<(event: PayrailEvent) => void>();
   private readonly faults: InjectedFault[] = [];
   private readonly now: () => Date;
+  private readonly random: () => number;
   private mode: 'sync' | 'async';
   private sequence = 0;
 
   constructor(options: FakePayrailOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.mode = options.mode ?? 'sync';
+    this.random = options.random ?? Math.random;
   }
 
   async tokenizeCard(card: CardDetails, now: Date): Promise<TokenizedCard> {
@@ -100,7 +104,7 @@ export class FakePayrail implements PaymentProvider {
       throw new BillingError('card_not_supported', 'card is expired');
     }
     this.sequence += 1;
-    const token = `tok_${last4}_${await digest(`${number}:${now.getTime()}:${this.sequence}:${Math.random()}`)}`;
+    const token = `tok_${last4}_${await digest(`${number}:${now.getTime()}:${this.sequence}:${this.random()}`)}`;
     return { token, brand: 'visa', last4, expMonth: card.expMonth, expYear: card.expYear };
   }
 

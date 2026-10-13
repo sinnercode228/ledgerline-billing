@@ -69,7 +69,7 @@ export async function applyPaymentResult(
   await tx.updatePayment(updated);
 
   if (result.status === 'succeeded') {
-    await settleWithPayment(tx, { subscription, invoice, payment: updated, now });
+    await settleWithPayment(ctx, tx, { subscription, invoice, payment: updated, now });
   } else {
     await handleFailedPayment(ctx, tx, { subscription, invoice, now });
   }
@@ -82,6 +82,7 @@ async function hasFailingInvoices(tx: StoreTx, subscriptionId: string): Promise<
 }
 
 async function settleWithPayment(
+  ctx: EngineContext,
   tx: StoreTx,
   input: { subscription: Subscription; invoice: Invoice; payment: Payment; now: Date },
 ): Promise<void> {
@@ -93,20 +94,20 @@ async function settleWithPayment(
     invoiceId: invoice.id,
     paymentId: payment.id,
   };
-  await post(tx, postings.paymentSucceeded({ ...refs, amount: payment.amount }), now);
+  await post(tx, postings.paymentSucceeded({ ...refs, amount: payment.amount }), now, ctx.ids);
 
   if (invoice.status === 'uncollectible' && outstanding(invoice) > 0) {
     const [writeOff] = await tx.listJournal({ invoiceId: invoice.id, kind: 'write_off', limit: 1 });
     if (!writeOff) throw new BillingError('not_found', `invoice ${invoice.id} is uncollectible but has no write-off`);
     const original = postings.writeOff({ ...refs, amount: outstanding(invoice) });
-    await post(tx, reversePosting(original, writeOff.id, 'Write-off reversed: the payment arrived after all'), now);
+    await post(tx, reversePosting(original, writeOff.id, 'Write-off reversed: the payment arrived after all'), now, ctx.ids);
   }
 
   const owed = invoice.status === 'open' || invoice.status === 'uncollectible' ? outstanding(invoice) : 0;
   const applied = Math.min(owed, payment.amount);
   const excess = payment.amount - applied;
   if (excess > 0) {
-    await post(tx, postings.overpaymentCredit({ ...refs, amount: excess }), now);
+    await post(tx, postings.overpaymentCredit({ ...refs, amount: excess }), now, ctx.ids);
   }
 
   let next: Invoice = { ...invoice, amountPaid: invoice.amountPaid + applied };
@@ -144,11 +145,11 @@ export async function handleFailedPayment(
     }
     return;
   }
-  await giveUp(tx, { subscription, failedInvoice: { ...invoice, firstFailedAt }, now });
+  await giveUp(ctx, tx, { subscription, failedInvoice: { ...invoice, firstFailedAt }, now });
 }
 
 /** Dunning is exhausted: every open invoice is written off and the subscription ends. */
-async function giveUp(tx: StoreTx, input: { subscription: Subscription; failedInvoice: Invoice; now: Date }): Promise<void> {
+async function giveUp(ctx: EngineContext, tx: StoreTx, input: { subscription: Subscription; failedInvoice: Invoice; now: Date }): Promise<void> {
   const { subscription, failedInvoice, now } = input;
   const open = await tx.listInvoices({ subscriptionId: subscription.id, status: 'open' });
   for (const stored of open) {
@@ -165,6 +166,7 @@ async function giveUp(tx: StoreTx, input: { subscription: Subscription; failedIn
           amount: remainder,
         }),
         now,
+        ctx.ids,
       );
     }
     assertInvoiceTransition(invoice.status, 'uncollectible');

@@ -3,6 +3,7 @@ export * from './customer.js';
 export * from './dunning.js';
 export * from './errors.js';
 export * from './ids.js';
+export * from './random.js';
 export * from './invoice.js';
 export * from './ledger.js';
 export * from './metrics.js';

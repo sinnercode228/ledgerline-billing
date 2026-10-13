@@ -107,7 +107,7 @@ async function advance(ctx: EngineContext, tx: StoreTx, subscription: Subscripti
     updatedAt: now,
   };
   await tx.updateSubscription(renewed);
-  const invoice = await issueInvoice(tx, customer, {
+  const invoice = await issueInvoice(tx, customer, ctx.ids, {
     subscription: renewed,
     kind: 'cycle',
     periodStart: period.start,

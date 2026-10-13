@@ -89,7 +89,7 @@ export async function changePlan(
     let invoiceId: string | null = null;
     let intent: ChargeIntent | null = null;
     if (preview.effect === 'invoice_now') {
-      const invoice = await issueInvoice(tx, customer, {
+      const invoice = await issueInvoice(tx, customer, ctx.ids, {
         subscription: updated,
         kind: 'proration',
         periodStart: preview.changeAt,
@@ -109,6 +109,7 @@ export async function changePlan(
           amount: -preview.net,
         }),
         now,
+        ctx.ids,
       );
     }
     return { preview, invoiceId, intent };

@@ -1,6 +1,5 @@
 import type { Customer, PaymentMethod } from '../customer.js';
 import { BillingError } from '../errors.js';
-import { newId } from '../ids.js';
 import { customerCreditAccount, receivableAccount } from '../ledger.js';
 import type { Currency } from '../money.js';
 import type { CardDetails } from '../ports/provider.js';
@@ -24,7 +23,7 @@ export async function createCustomer(ctx: EngineContext, input: NewCustomer, now
       if (replay) return requireCustomer(tx, replay);
     }
     const customer: Customer = {
-      id: newId('cus'),
+      id: ctx.ids('cus'),
       name: input.name.trim(),
       email: input.email,
       currency: input.currency,
@@ -52,7 +51,7 @@ export async function attachPaymentMethod(
   const { method, isDefault } = await ctx.store.run(async (tx) => {
     const customer = await requireCustomer(tx, customerId, 'for_update');
     const method: PaymentMethod = {
-      id: newId('pm'),
+      id: ctx.ids('pm'),
       customerId,
       providerToken: tokenized.token,
       brand: tokenized.brand,

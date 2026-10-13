@@ -1,5 +1,6 @@
 import { MINUTE_MS } from '../calendar.js';
 import { DEFAULT_DUNNING_POLICY, type DunningPolicy } from '../dunning.js';
+import { newId, type IdGenerator } from '../ids.js';
 import type { PaymentProvider } from '../ports/provider.js';
 import type { Store } from '../ports/store.js';
 
@@ -22,6 +23,8 @@ export interface EngineOptions {
   /** A payment still pending this long after the provider was last asked is asked again with the same idempotency key. */
   pendingPaymentRetryAfterMs?: number;
   logger?: Logger;
+  /** Where new ids come from; a seeded generator makes a whole world reproducible. */
+  ids?: IdGenerator;
 }
 
 export interface EngineContext {
@@ -30,6 +33,7 @@ export interface EngineContext {
   dunning: DunningPolicy;
   pendingPaymentRetryAfterMs: number;
   logger: Logger;
+  ids: IdGenerator;
 }
 
 export function createContext(options: EngineOptions): EngineContext {
@@ -39,5 +43,6 @@ export function createContext(options: EngineOptions): EngineContext {
     dunning: options.dunning ?? DEFAULT_DUNNING_POLICY,
     pendingPaymentRetryAfterMs: options.pendingPaymentRetryAfterMs ?? 10 * MINUTE_MS,
     logger: options.logger ?? silentLogger,
+    ids: options.ids ?? newId,
   };
 }

@@ -1,12 +1,12 @@
 import type { Customer } from '../customer.js';
-import { newId } from '../ids.js';
+import type { IdGenerator } from '../ids.js';
 import { assertBalanced, customerCreditAccount, toJournalTransaction, type JournalTransaction, type Posting } from '../ledger.js';
 import type { StoreTx } from '../ports/store.js';
 
-export async function post(tx: StoreTx, posting: Posting, now: Date): Promise<JournalTransaction> {
+export async function post(tx: StoreTx, posting: Posting, now: Date, ids: IdGenerator): Promise<JournalTransaction> {
   assertBalanced(posting);
   await tx.ensureLedgerAccounts(posting.lines.map((line) => line.account));
-  const transaction = toJournalTransaction(posting, newId('jt'), now);
+  const transaction = toJournalTransaction(posting, ids('jt'), now);
   await tx.insertJournalTransaction(transaction);
   return transaction;
 }

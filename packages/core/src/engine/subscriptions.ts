@@ -1,6 +1,5 @@
 import { periodBoundary, addDays, truncateToSecond } from '../calendar.js';
 import { BillingError } from '../errors.js';
-import { newId } from '../ids.js';
 import { cycleLines } from '../invoice.js';
 import { priceFor } from '../plans.js';
 import type { Subscription } from '../subscription.js';
@@ -37,7 +36,7 @@ export async function createSubscription(
     const price = priceFor(plan, customer.currency);
     const start = truncateToSecond(now);
     const base = {
-      id: newId('sub'),
+      id: ctx.ids('sub'),
       customerId: customer.id,
       planId: plan.id,
       currency: customer.currency,
@@ -75,7 +74,7 @@ export async function createSubscription(
         trialEnd: null,
       };
       await tx.insertSubscription(subscription);
-      const invoice = await issueInvoice(tx, customer, {
+      const invoice = await issueInvoice(tx, customer, ctx.ids, {
         subscription,
         kind: 'cycle',
         periodStart: start,

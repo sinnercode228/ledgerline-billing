@@ -1,6 +1,5 @@
 import type { Customer, PaymentMethod } from '../customer.js';
 import { BillingError } from '../errors.js';
-import { newId } from '../ids.js';
 import type { Invoice } from '../invoice.js';
 import type { Currency } from '../money.js';
 import { paymentIdempotencyKey, type Payment, type PaymentTrigger } from '../payments.js';
@@ -56,7 +55,7 @@ export async function startPayment(
   const attempt = invoice.attemptCount + 1;
   const method = customer.defaultPaymentMethodId === null ? null : await tx.getPaymentMethod(customer.defaultPaymentMethodId);
   const payment: Payment = {
-    id: newId('pay'),
+    id: ctx.ids('pay'),
     invoiceId: invoice.id,
     customerId: invoice.customerId,
     subscriptionId: invoice.subscriptionId,
