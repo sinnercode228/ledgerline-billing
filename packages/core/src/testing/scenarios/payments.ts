@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { MINUTE_MS, utcDay } from '../../calendar.js';
+import { addDays, MINUTE_MS, utcDay } from '../../calendar.js';
 import type { DueWorkReport } from '../../engine/due-work.js';
+import type { Invoice } from '../../invoice.js';
+import type { Payment } from '../../payments.js';
 import type { PayrailEvent } from '../../payrail/events.js';
+import type { Store, StoreTx } from '../../ports/store.js';
+import { findInvariantViolations } from '../invariants.js';
 import { at, expectBalancedLedger, useStore, type StoreFactory } from '../harness.js';
 import { BillingWorld } from '../world.js';
 
@@ -12,6 +16,33 @@ function asEvent(event: PayrailEvent, changes: { id: string; type: string; statu
     type: changes.type,
     data: { object: { ...event.data.object, status: changes.status, failure_code: changes.failure_code } },
   };
+}
+
+/** Notes writes that must never happen, even when a later write in the same transaction hides them. */
+function watchWrittenOffInvoices(store: Store): { store: Store; problems: string[] } {
+  const problems: string[] = [];
+  const watch = (tx: StoreTx): StoreTx =>
+    new Proxy(tx, {
+      get(target, property): unknown {
+        if (property === 'updateInvoice') {
+          return async (invoice: Invoice) => {
+            const stored = await target.getInvoice(invoice.id);
+            if (stored?.status === 'uncollectible' && invoice.status === 'open') problems.push(`invoice ${invoice.number} reopened`);
+            await target.updateInvoice(invoice);
+          };
+        }
+        if (property === 'insertPayment') {
+          return async (payment: Payment) => {
+            const writeOffs = await target.listJournal({ invoiceId: payment.invoiceId, kind: 'write_off' });
+            if (writeOffs.length > 0) problems.push(`payment ${payment.attempt} started for written-off invoice ${payment.invoiceId}`);
+            await target.insertPayment(payment);
+          };
+        }
+        const value: unknown = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  return { store: { run: (work) => store.run((tx) => work(watch(tx))) }, problems };
 }
 
 export function paymentScenarios(factory: StoreFactory): void {
@@ -223,6 +254,40 @@ export function paymentScenarios(factory: StoreFactory): void {
       expect(summary('2026-03-13')).toEqual({ ...quiet, retries: 1, paymentsFailed: 1 });
       expect(summary('2026-03-15')).toEqual({ ...quiet, retries: 1, paymentsFailed: 1, writtenOff: 1, canceled: 1 });
       expect(summary('2026-03-24')).toEqual({ ...quiet, trialsEnded: 2, paymentsSucceeded: 1, paymentsFailed: 1 });
+    });
+
+    it('writes each invoice off once when the first of two due retries gives up', async () => {
+      const watched = watchWrittenOffInvoices(store());
+      const world = await BillingWorld.create(watched.store, at('2026-03-10T12:00:00Z'), { dunning: { retryDays: [1] } });
+      const { customer } = await world.customer('Tallowmere Press', 'EUR', 'declined');
+      // Payrail answers only by webhook, so the first charge is still in flight when the upgrade is invoiced.
+      world.provider.setMode('async');
+      const subscription = await world.engine.createSubscription({ customerId: customer.id, planId: 'plan_team_yearly' }, world.now);
+      await world.engine.changePlan(subscription.id, 'plan_business_yearly', world.now);
+      await world.deliverEvents();
+      expect((await world.engine.getSubscription(subscription.id)).status).toBe('past_due');
+      const failing = await world.engine.listInvoices({ subscriptionId: subscription.id, status: 'open' });
+      expect(failing.map((i) => i.kind).sort()).toEqual(['cycle', 'proration']);
+      expect(failing.map((i) => i.nextRetryAt)).toEqual([at('2026-03-11T12:00:00Z'), at('2026-03-11T12:00:00Z')]);
+
+      // The engine cannot detach a card, so the store drops it: the retry then fails at once, inside the due-work transaction.
+      await world.store.run(async (tx) => {
+        const current = await tx.getCustomer(customer.id, 'for_update');
+        await tx.updateCustomer({ ...current!, defaultPaymentMethodId: null });
+      });
+      const report = await world.engine.runDueWork(addDays(world.now, 1));
+
+      expect(report).toMatchObject({ retries: 1, paymentsFailed: 1, writtenOff: 2, canceled: 1 });
+      expect((await world.engine.getSubscription(subscription.id)).status).toBe('canceled');
+      const invoices = await world.engine.listInvoices({ subscriptionId: subscription.id });
+      expect(invoices.map((i) => i.status)).toEqual(['uncollectible', 'uncollectible']);
+      const writeOffs = await world.engine.journal({ kind: 'write_off' });
+      expect(writeOffs.map((t) => t.refs.invoiceId).sort()).toEqual(invoices.map((i) => i.id).sort());
+      const attempts = await Promise.all(invoices.map(async (i) => (await world.engine.getInvoice(i.id)).payments.length));
+      expect(attempts.sort()).toEqual([1, 2]);
+      expect(watched.problems).toEqual([]);
+      expect(await findInvariantViolations(world)).toEqual([]);
+      await expectBalancedLedger(world.engine);
     });
 
     it('recovers when a scheduled retry succeeds', async () => {

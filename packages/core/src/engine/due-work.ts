@@ -1,11 +1,11 @@
-import { cycleLines } from '../invoice.js';
+import { cycleLines, type Invoice } from '../invoice.js';
 import { priceFor } from '../plans.js';
 import type { StoreTx } from '../ports/store.js';
 import { nextPeriod, transition, type Subscription } from '../subscription.js';
 import { executeCharge, hasPaymentInFlight, retryStalePayments, startPayment, type ChargeIntent } from './charging.js';
 import type { EngineContext } from './context.js';
 import { issueInvoice } from './invoicing.js';
-import { requireCustomer, requirePlan, requireSubscription } from './lookups.js';
+import { requireCustomer, requireInvoice, requirePlan, requireSubscription } from './lookups.js';
 import { addEffects, noEffects, type PaymentEffects } from './payment-results.js';
 
 export interface DueWorkReport {
@@ -151,18 +151,21 @@ async function advance(ctx: EngineContext, tx: StoreTx, subscription: Subscripti
 
 async function retryDueInvoices(ctx: EngineContext, tx: StoreTx, subscription: Subscription, now: Date): Promise<Step> {
   const customer = await requireCustomer(tx, subscription.customerId, 'for_update');
-  const due = (await tx.listInvoices({ subscriptionId: subscription.id, status: 'open' })).filter(
-    (invoice) => invoice.nextRetryAt !== null && invoice.nextRetryAt <= now,
-  );
+  const isDue = (invoice: Invoice) => invoice.status === 'open' && invoice.nextRetryAt !== null && invoice.nextRetryAt <= now;
+  const due = (await tx.listInvoices({ subscriptionId: subscription.id, status: 'open' })).filter(isDue);
   const intents: ChargeIntent[] = [];
   let effects = noEffects();
-  for (const invoice of due) {
+  for (const listed of due) {
+    // A retry that fails at once can end dunning and write off every open invoice, so each one is read again.
+    const current = await requireSubscription(tx, subscription.id);
+    if (current.status !== 'past_due') break;
+    const invoice = await requireInvoice(tx, listed.id, 'for_update');
+    if (!isDue(invoice)) continue;
     if (await hasPaymentInFlight(tx, invoice.id)) {
       // The outcome of the payment in flight decides the next retry.
       await tx.updateInvoice({ ...invoice, nextRetryAt: null });
       continue;
     }
-    const current = await requireSubscription(tx, subscription.id);
     const counted = { ...invoice, scheduledRetries: invoice.scheduledRetries + 1 };
     const started = await startPayment(ctx, tx, { subscription: current, customer, invoice: counted, trigger: 'scheduled_retry', now });
     if (started.intent) intents.push(started.intent);

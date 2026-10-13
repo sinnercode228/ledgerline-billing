@@ -1,12 +1,13 @@
 import type { Customer, PaymentMethod } from '../customer.js';
 import { BillingError } from '../errors.js';
+import type { Invoice } from '../invoice.js';
 import { customerCreditAccount, receivableAccount } from '../ledger.js';
 import type { Currency } from '../money.js';
 import type { CardDetails } from '../ports/provider.js';
 import { executeCharge, hasPaymentInFlight, startPayment, type ChargeIntent } from './charging.js';
 import type { EngineContext } from './context.js';
 import { findReplay, rememberResult } from './idempotency.js';
-import { requireCustomer, requireSubscription } from './lookups.js';
+import { requireCustomer, requireInvoice, requireSubscription } from './lookups.js';
 
 export interface NewCustomer {
   name: string;
@@ -96,11 +97,16 @@ export async function retryPastDueInvoices(ctx: EngineContext, customerId: strin
       const subscription = await requireSubscription(tx, id, 'for_update');
       if (subscription.status !== 'past_due') return [];
       const customer = await requireCustomer(tx, customerId, 'for_update');
-      const failing = (await tx.listInvoices({ subscriptionId: id, status: 'open' })).filter((i) => i.firstFailedAt !== null);
+      const isFailing = (invoice: Invoice) => invoice.status === 'open' && invoice.firstFailedAt !== null;
+      const failing = (await tx.listInvoices({ subscriptionId: id, status: 'open' })).filter(isFailing);
       const started: ChargeIntent[] = [];
-      for (const invoice of failing) {
-        if (await hasPaymentInFlight(tx, invoice.id)) continue;
+      for (const listed of failing) {
+        // A payment that fails at once can end dunning and write off every open invoice, so each one is read again.
         const current = await requireSubscription(tx, id);
+        if (current.status !== 'past_due') break;
+        const invoice = await requireInvoice(tx, listed.id, 'for_update');
+        if (!isFailing(invoice)) continue;
+        if (await hasPaymentInFlight(tx, invoice.id)) continue;
         const { intent } = await startPayment(ctx, tx, { subscription: current, customer, invoice, trigger: 'payment_method_updated', now });
         if (intent) started.push(intent);
       }
