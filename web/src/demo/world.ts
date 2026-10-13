@@ -1,6 +1,7 @@
 import {
   BillingEngine,
   BillingError,
+  checkClockAdvance,
   DAY_MS,
   FakePayrail,
   MemoryStore,
@@ -119,7 +120,7 @@ export class DemoWorld {
   advanceTo(to: Date): Promise<ClockAdvance> {
     return this.exclusive(async () => {
       const from = await this.now();
-      if (to < from) throw new BillingError('invalid_argument', 'the test clock only moves forward');
+      checkClockAdvance(from, to);
       const days: ClockAdvance['days'] = [];
       for (let current = from; current < to; ) {
         const at = new Date(Math.min(current.getTime() + DAY_MS, to.getTime()));

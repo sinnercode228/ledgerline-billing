@@ -25,7 +25,7 @@ export type { DueWorkReport } from './engine/due-work.js';
 export type { NewCustomer } from './engine/customers.js';
 export type { NewSubscription } from './engine/subscriptions.js';
 export type { PlanChangeEffect, PlanChangePreview } from './engine/plan-change.js';
-export type { ClockAdvance } from './engine/test-clock.js';
+export { checkClockAdvance, MAX_CLOCK_ADVANCE_DAYS, type ClockAdvance } from './engine/test-clock.js';
 export type { ReceiveResult } from './engine/webhooks.js';
 export { finalizeInvoice, draftInvoice } from './engine/invoicing.js';
 export {

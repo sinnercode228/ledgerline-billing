@@ -63,6 +63,12 @@ describe('the demo world', () => {
     for (const sequences of byYear.values()) expect(sequences).toEqual(sequences.map((_, i) => i + 1));
   }, 60_000);
 
+  it('moves the clock at most 400 days at once, like the server', async () => {
+    const api = await createDemoApi({ today, storage: null });
+    await expect(api.advanceClock({ to: '2027-11-18T09:00:00.000Z' })).rejects.toMatchObject({ status: 422, code: 'invalid_argument' });
+    expect((await api.clock()).now).toBe('2026-10-13T09:00:00.000Z');
+  });
+
   it('builds the same world, id for id, every time', async () => {
     const first = await createDemoApi({ today, storage: null });
     const second = await createDemoApi({ today, storage: null });

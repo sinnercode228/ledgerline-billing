@@ -157,4 +157,13 @@ describe.each(testStores())('HTTP: billing flow through the API on %s', (_name, 
     expect((await post('/v1/test-clock/advance', { days: 0 })).statusCode).toBe(400);
     expect((await post('/v1/test-clock/advance', { to: '2020-01-01T00:00:00Z' })).json()).toMatchObject({ error: { code: 'invalid_argument' } });
   });
+
+  it('moves the test clock at most 400 days in one request, however the target is given', async () => {
+    const far = await post('/v1/test-clock/advance', { to: '2027-03-09T00:00:00Z' });
+    expect(far.statusCode).toBe(422);
+    expect(far.json()).toMatchObject({ error: { code: 'invalid_argument' } });
+    expect((await post('/v1/test-clock/advance', { days: 300, hours: 24 * 101 })).statusCode).toBe(422);
+    expect((await get('/v1/test-clock')).json()).toEqual({ enabled: true, now: '2026-02-01T00:00:00.000Z' });
+    expect((await post('/v1/test-clock/advance', { to: '2027-03-08T00:00:00Z' })).statusCode).toBe(200);
+  });
 });

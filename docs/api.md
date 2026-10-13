@@ -129,7 +129,7 @@ Enabled with `LEDGERLINE_TEST_CLOCK=1`; otherwise `POST` answers `404 test_clock
 | `GET /v1/test-clock` | | `{ enabled, now }` |
 | `POST /v1/test-clock/advance` | `{ days?, hours? }` or `{ to }` | `{ from, to, days: [day report] }` |
 
-The clock moves one day at a time and runs due work at every step, so a renewal that fails on one day is retried on the next before anything later happens. Each day report says what that step did:
+The clock moves one day at a time and runs due work at every step, so a renewal that fails on one day is retried on the next before anything later happens. One request moves it at most 400 days, whether it sends `days`, `hours` or `to`; a longer move is refused with 422 `invalid_argument`. Each day report says what that step did:
 
 ```json
 {

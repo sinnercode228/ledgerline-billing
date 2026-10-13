@@ -9,6 +9,16 @@ export interface ClockAdvance {
   days: Array<{ at: Date; report: DueWorkReport }>;
 }
 
+/** Each day of an advance runs due work, so one request may only cover so many. */
+export const MAX_CLOCK_ADVANCE_DAYS = 400;
+
+export function checkClockAdvance(from: Date, to: Date): void {
+  if (to < from) throw new BillingError('invalid_argument', 'the test clock only moves forward');
+  if (to.getTime() - from.getTime() > MAX_CLOCK_ADVANCE_DAYS * DAY_MS) {
+    throw new BillingError('invalid_argument', `the test clock moves at most ${MAX_CLOCK_ADVANCE_DAYS} days at a time`);
+  }
+}
+
 /**
  * Moves the stored clock forward one day at a time, running due work at each
  * step, so a renewal that fails on day 3 is retried on day 4 before anything
@@ -21,7 +31,7 @@ export async function advanceClock(
 ): Promise<ClockAdvance> {
   const from = await ctx.store.run((tx) => tx.getClock());
   if (!from) throw new BillingError('clock_not_set', 'set the test clock before advancing it');
-  if (to < from) throw new BillingError('invalid_argument', 'the test clock only moves forward');
+  checkClockAdvance(from, to);
   const days: ClockAdvance['days'] = [];
   let current = from;
   while (current < to) {
