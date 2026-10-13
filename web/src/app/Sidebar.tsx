@@ -15,6 +15,15 @@ const SECTIONS = [
   { page: 'webhooks', to: { page: 'webhooks' }, label: 'nav.webhooks' },
 ] as const satisfies ReadonlyArray<{ page: string; to: Route; label: string }>;
 
+/** The host and port say which server it is; the scheme and path only take room. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 /** Detail pages belong to the section of their list. */
 function sectionOf(route: Route): string {
   if (route.page === 'customer') return 'customers';
@@ -71,7 +80,12 @@ export function Sidebar({ route, connection }: { route: Route; connection: Conne
         <DemoNote reset={connection.reset} saveFailed={connection.saveFailed} />
       ) : (
         <div className="side-note">
-          <p className="mono">{connection.baseUrl}</p>
+          <p>
+            {t('auth.server')}{' '}
+            <span className="mono" title={connection.baseUrl}>
+              {hostOf(connection.baseUrl)}
+            </span>
+          </p>
           <button type="button" className="link-button" onClick={connection.forgetKey}>
             {t('auth.signOut')}
           </button>
