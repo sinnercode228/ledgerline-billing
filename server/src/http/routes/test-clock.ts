@@ -1,9 +1,8 @@
-import { DAY_MS } from '@ledgerline/core';
+import { clockAdvanceDto, DAY_MS } from '@ledgerline/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ApiContext } from '../context.js';
 import { HttpError } from '../errors.js';
-import { clockAdvanceDto } from '../serialize.js';
 import { parse } from '../validation.js';
 
 const HOUR_MS = DAY_MS / 24;

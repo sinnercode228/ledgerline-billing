@@ -1,8 +1,7 @@
-import { customerCreditAccount } from '@ledgerline/core';
+import { customerDetailDto, paymentMethodDto } from '@ledgerline/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ApiContext } from '../context.js';
-import { paymentMethodDto } from '../serialize.js';
 import { currency, id, idempotencyKey, idParams, pageQuery, parse } from '../validation.js';
 
 const newCustomer = z.object({
@@ -36,14 +35,7 @@ export function customerRoutes(app: FastifyInstance, { engine, clock }: ApiConte
   app.get('/customers/:id', async (request) => {
     const { id: customerId } = parse(idParams, request.params);
     const customer = await engine.getCustomer(customerId);
-    const methods = await engine.listPaymentMethods(customerId);
-    const accounts = await engine.ledgerAccounts({ customerId });
-    const credit = accounts.find((row) => row.account.id === customerCreditAccount(customerId, customer.currency).id);
-    return {
-      ...customer,
-      paymentMethods: methods.map((method) => paymentMethodDto(method, customer.defaultPaymentMethodId)),
-      creditBalance: credit ? -credit.balance : 0,
-    };
+    return customerDetailDto(customer, await engine.listPaymentMethods(customerId), await engine.ledgerAccounts({ customerId }));
   });
 
   app.post('/customers/:id/payment-methods', async (request, reply) => {

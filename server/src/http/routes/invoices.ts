@@ -1,7 +1,7 @@
+import { invoiceDetailDto } from '@ledgerline/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ApiContext } from '../context.js';
-import { paymentDto } from '../serialize.js';
 import { id, idParams, pageQuery, parse } from '../validation.js';
 
 const listQuery = pageQuery.extend({
@@ -18,7 +18,7 @@ export function invoiceRoutes(app: FastifyInstance, { engine, clock }: ApiContex
 
   app.get('/invoices/:id', async (request) => {
     const { invoice, payments } = await engine.getInvoice(parse(idParams, request.params).id);
-    return { ...invoice, payments: payments.map(paymentDto) };
+    return invoiceDetailDto(invoice, payments);
   });
 
   app.post('/invoices/:id/refund', async (request) => engine.refundInvoice(parse(idParams, request.params).id, await clock.now()));

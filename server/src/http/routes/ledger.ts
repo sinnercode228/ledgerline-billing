@@ -1,7 +1,7 @@
+import { accountDto } from '@ledgerline/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ApiContext } from '../context.js';
-import { accountDto } from '../serialize.js';
 import { id, pageQuery, parse } from '../validation.js';
 
 const POSTING_KINDS = [

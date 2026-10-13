@@ -37,3 +37,4 @@ export {
   type DemoSeedSummary,
   type DemoStory,
 } from './demo/seed.js';
+export * from './api/representations.js';
