@@ -18,6 +18,22 @@ import type { Subscription } from '../subscription.js';
 import { utcDay } from '../calendar.js';
 import type { WebhookEventRecord } from '../webhook-events.js';
 
+/** Every row of a MemoryStore as plain, structured-cloneable data, for saving a world and loading it later. */
+export interface MemoryStoreDump {
+  customers: Customer[];
+  paymentMethods: PaymentMethod[];
+  plans: Plan[];
+  subscriptions: Subscription[];
+  invoices: Invoice[];
+  invoiceCounters: Array<{ year: number; last: number }>;
+  payments: Payment[];
+  accounts: LedgerAccount[];
+  journal: JournalTransaction[];
+  webhookEvents: WebhookEventRecord[];
+  idempotency: IdempotencyRecord[];
+  clock: Date | null;
+}
+
 interface MemoryState {
   customers: Map<string, Customer>;
   paymentMethods: Map<string, PaymentMethod>;
@@ -52,6 +68,22 @@ function emptyState(): MemoryState {
 
 const copy = <T>(value: T): T => structuredClone(value);
 
+const idempotencyId = (scope: string, key: string) => `${scope}\u0000${key}`;
+
+function assertTransactionBalances(transaction: JournalTransaction): void {
+  const sum = transaction.entries.reduce((total, entry) => total + entry.amount, 0);
+  if (transaction.entries.length < 2 || sum !== 0) {
+    throw new BillingError('unbalanced_transaction', `journal transaction ${transaction.id} does not balance: off by ${sum}`);
+  }
+}
+
+function addToTotals(totals: MemoryState['accountTotals'], accountId: string, amount: number): void {
+  const row = totals.get(accountId) ?? { debits: 0, credits: 0 };
+  if (amount > 0) row.debits += amount;
+  else row.credits -= amount;
+  totals.set(accountId, row);
+}
+
 function page<T>(rows: T[], { limit, offset = 0 }: Page): T[] {
   return rows.slice(offset, limit === undefined ? undefined : offset + limit);
 }
@@ -72,8 +104,55 @@ export class MemoryStore implements Store {
   private readonly journal: JournalTransaction[] = [];
   private queue: Promise<unknown> = Promise.resolve();
 
+  /** A store holding exactly the rows of a dump. Refuses a journal that does not balance. */
+  static restore(dump: MemoryStoreDump): MemoryStore {
+    const store = new MemoryStore();
+    const s = store.state;
+    const byId = <T extends { id: string }>(rows: readonly T[]) => new Map(rows.map((row) => [row.id, copy(row)]));
+    s.customers = byId(dump.customers);
+    s.paymentMethods = byId(dump.paymentMethods);
+    s.plans = byId(dump.plans);
+    s.subscriptions = byId(dump.subscriptions);
+    s.invoices = byId(dump.invoices);
+    s.payments = byId(dump.payments);
+    s.accounts = byId(dump.accounts);
+    s.invoiceCounters = new Map(dump.invoiceCounters.map(({ year, last }) => [year, last]));
+    s.webhookEvents = new Map(dump.webhookEvents.map((event) => [event.providerEventId, copy(event)]));
+    s.idempotency = new Map(dump.idempotency.map((record) => [idempotencyId(record.scope, record.key), copy(record)]));
+    s.clock = copy(dump.clock);
+    for (const transaction of dump.journal) {
+      assertTransactionBalances(transaction);
+      for (const entry of transaction.entries) addToTotals(s.accountTotals, entry.accountId, entry.amount);
+      store.journal.push(copy(transaction));
+    }
+    return store;
+  }
+
   run<T>(work: (tx: StoreTx) => Promise<T>): Promise<T> {
     const result = this.queue.then(() => this.execute(work));
+    this.queue = result.catch(() => undefined);
+    return result;
+  }
+
+  /** Every row as plain data, taken after the transactions already queued have finished. */
+  dump(): Promise<MemoryStoreDump> {
+    const result = this.queue.then(
+      (): MemoryStoreDump =>
+        copy({
+          customers: [...this.state.customers.values()],
+          paymentMethods: [...this.state.paymentMethods.values()],
+          plans: [...this.state.plans.values()],
+          subscriptions: [...this.state.subscriptions.values()],
+          invoices: [...this.state.invoices.values()],
+          invoiceCounters: [...this.state.invoiceCounters].map(([year, last]) => ({ year, last })),
+          payments: [...this.state.payments.values()],
+          accounts: [...this.state.accounts.values()],
+          journal: this.journal,
+          webhookEvents: [...this.state.webhookEvents.values()],
+          idempotency: [...this.state.idempotency.values()],
+          clock: this.state.clock,
+        }),
+    );
     this.queue = result.catch(() => undefined);
     return result;
   }
@@ -102,12 +181,7 @@ class MemoryTx implements StoreTx {
   }
 
   checkDeferredConstraints(): void {
-    for (const transaction of this.appended) {
-      const sum = transaction.entries.reduce((total, entry) => total + entry.amount, 0);
-      if (transaction.entries.length < 2 || sum !== 0) {
-        throw new BillingError('unbalanced_transaction', `journal transaction ${transaction.id} does not balance: off by ${sum}`);
-      }
-    }
+    for (const transaction of this.appended) assertTransactionBalances(transaction);
   }
 
   async insertCustomer(customer: Customer) {
@@ -291,12 +365,7 @@ class MemoryTx implements StoreTx {
       }
     }
     if (this.journal.some((t) => t.id === transaction.id)) throw new BillingError('duplicate_key', `journal transaction ${transaction.id} exists`);
-    for (const entry of transaction.entries) {
-      const totals = this.s.accountTotals.get(entry.accountId) ?? { debits: 0, credits: 0 };
-      if (entry.amount > 0) totals.debits += entry.amount;
-      else totals.credits -= entry.amount;
-      this.s.accountTotals.set(entry.accountId, totals);
-    }
+    for (const entry of transaction.entries) addToTotals(this.s.accountTotals, entry.accountId, entry.amount);
     this.appended.push(copy(transaction));
   }
   async getAccountBalance(accountId: string) {
@@ -360,10 +429,10 @@ class MemoryTx implements StoreTx {
   }
 
   async lockIdempotencyKey(scope: string, key: string) {
-    return copy(this.s.idempotency.get(`${scope}\u0000${key}`) ?? null);
+    return copy(this.s.idempotency.get(idempotencyId(scope, key)) ?? null);
   }
   async saveIdempotencyKey(record: IdempotencyRecord) {
-    const id = `${record.scope}\u0000${record.key}`;
+    const id = idempotencyId(record.scope, record.key);
     if (this.s.idempotency.has(id)) throw new BillingError('duplicate_key', 'idempotency key already used');
     this.s.idempotency.set(id, copy(record));
   }
