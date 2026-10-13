@@ -133,8 +133,10 @@ export class FakePayrail implements PaymentProvider {
   async refundPayment(request: RefundRequest): Promise<ProviderRefund> {
     const existing = this.refundsByKey.get(request.idempotencyKey);
     if (existing) return { ...existing };
+    // Another process may have taken the payment, so an unknown id is trusted
+    // as long as it looks like one; a payment known to have failed is refused.
     const payment = [...this.paymentsByKey.values()].find((p) => p.result.id === request.providerPaymentId);
-    if (!payment || payment.result.status !== 'succeeded') {
+    if (!/^pay_[0-9a-f]{24}$/.test(request.providerPaymentId) || (payment && payment.result.status !== 'succeeded')) {
       throw new BillingError('not_found', `payment ${request.providerPaymentId} cannot be refunded`);
     }
     const refund = { id: `re_${await digest(request.idempotencyKey)}`, providerPaymentId: request.providerPaymentId, amount: request.amount };
