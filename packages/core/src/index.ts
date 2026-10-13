@@ -38,3 +38,4 @@ export {
   type DemoStory,
 } from './demo/seed.js';
 export * from './api/representations.js';
+export * from './api/errors.js';

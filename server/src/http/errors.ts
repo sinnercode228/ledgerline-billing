@@ -1,4 +1,4 @@
-import { isBillingError, type BillingErrorCode } from '@ledgerline/core';
+import { isBillingError, statusForBillingError } from '@ledgerline/core';
 import type { FastifyError, FastifyInstance } from 'fastify';
 
 export class HttpError extends Error {
@@ -20,16 +20,6 @@ export function errorBody(code: string, message: string, details?: Record<string
   return { error: details ? { code, message, details } : { code, message } };
 }
 
-const STATUS_BY_CODE: Partial<Record<BillingErrorCode, number>> = {
-  not_found: 404,
-  idempotency_conflict: 409,
-  duplicate_invoice: 409,
-  duplicate_key: 409,
-  invalid_transition: 409,
-  // The engine balances every posting itself; reaching the database check is a bug.
-  unbalanced_transaction: 500,
-};
-
 const FASTIFY_ERRORS: Record<string, [number, string]> = {
   FST_ERR_CTP_INVALID_JSON_BODY: [400, 'invalid_json'],
   FST_ERR_CTP_EMPTY_JSON_BODY: [400, 'invalid_json'],
@@ -43,7 +33,7 @@ export function registerErrorHandling(app: FastifyInstance): void {
       return reply.status(error.statusCode).send(errorBody(error.code, error.message, error.details));
     }
     if (isBillingError(error)) {
-      const status = STATUS_BY_CODE[error.code] ?? 422;
+      const status = statusForBillingError(error.code);
       if (status >= 500) {
         request.log.error({ err: error }, 'billing invariant violated');
         return reply.status(status).send(errorBody('internal_error', 'Something went wrong on our side'));
