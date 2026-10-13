@@ -10,7 +10,7 @@ const end = new Date('2026-10-13T09:00:00Z');
 
 function engineOn(store: MemoryStore, seed: number) {
   const random = new SeededRandom(seed);
-  const provider = new FakePayrail({ random: random.next });
+  const provider = new FakePayrail({ random: random.next, now: () => end });
   return { engine: new BillingEngine({ store, provider, ids: seededIds(random.next) }), provider };
 }
 

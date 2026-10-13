@@ -66,6 +66,7 @@ export interface DemoSeedOptions {
   /** The seeded history ends here; the test clock is left at this instant. */
   end: Date;
   days?: number;
+  /** Called as each simulated day starts, before its due work runs. */
   onDay?: (at: Date) => void;
 }
 
@@ -140,9 +141,9 @@ export async function seedDemo(options: DemoSeedOptions): Promise<DemoSeedSummar
     await deliverEvents(at);
     if (at >= end) break;
     at = new Date(Math.min(at.getTime() + DAY_MS, end.getTime()));
+    options.onDay?.(at);
     await engine.advanceClock(at);
     await deliverEvents(at);
-    options.onDay?.(at);
   }
 
   return { from, to: end, customers: customerIds.size };

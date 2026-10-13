@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DAY_MS } from '../src/calendar.js';
 import { seedDemo } from '../src/demo/seed.js';
 import { BillingEngine } from '../src/engine/billing-engine.js';
 import { seededIds } from '../src/ids.js';
@@ -9,10 +10,13 @@ import { SeededRandom } from '../src/random.js';
 const end = new Date('2026-10-13T09:00:00Z');
 
 async function seededWorld(seed: number) {
+  const days = 60;
   const random = new SeededRandom(seed);
-  const provider = new FakePayrail({ random: random.next });
+  // Event timestamps follow the simulated clock, not the wall clock.
+  let now = new Date(end.getTime() - days * DAY_MS);
+  const provider = new FakePayrail({ random: random.next, now: () => now });
   const engine = new BillingEngine({ store: new MemoryStore(), provider, ids: seededIds(random.next) });
-  await seedDemo({ engine, provider, end, days: 60 });
+  await seedDemo({ engine, provider, end, days, onDay: (at) => (now = at) });
   return engine;
 }
 
