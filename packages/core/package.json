@@ -7,11 +7,20 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./src/testing/index.ts",
+      "default": "./dist/testing/index.js"
     }
   },
   "devDependencies": {
     "fast-check": "^4.10.2",
     "vite": "~7.3.7",
     "vitest": "^4.1.11"
+  },
+  "description": "Billing rules, the engine and its ports. Runs in Node and in the browser.",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
   }
 }
