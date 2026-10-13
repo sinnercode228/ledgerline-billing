@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useI18n } from '../i18n/i18n';
 import { Icon } from './Icon';
 
@@ -11,7 +12,10 @@ interface DialogProps {
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** A modal dialog: focus moves in and stays in, Escape closes it, focus returns where it was. */
+/**
+ * A modal dialog: focus moves in and stays in, Escape closes it, focus returns where it was.
+ * It renders into <body>, so a sticky or transformed ancestor of the opener cannot stack the page over it.
+ */
 export function Dialog({ title, onClose, children, footer }: DialogProps) {
   const { t } = useI18n();
   const titleId = useId();
@@ -46,7 +50,7 @@ export function Dialog({ title, onClose, children, footer }: DialogProps) {
     }
   };
 
-  return (
+  return createPortal(
     <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div ref={panel} className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={onKeyDown}>
         <header className="dialog-head">
@@ -58,6 +62,7 @@ export function Dialog({ title, onClose, children, footer }: DialogProps) {
         <div className="dialog-body">{children}</div>
         {footer && <footer className="dialog-foot">{footer}</footer>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
