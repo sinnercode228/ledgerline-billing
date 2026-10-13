@@ -82,13 +82,15 @@ export class DemoWorld {
       end,
       days: DEMO_DAYS,
       story: BROWSER_STORY,
-      onDay: (at) => {
+      onDay: async (at) => {
         day += 1;
         world.providerNow = at;
         // Every fourth day Payrail answers "pending" and settles through webhooks, as real
         // providers do for slower payment methods, so the log has events that did the work.
         world.provider.setMode(day % 4 === 0 ? 'async' : 'sync');
         options.onProgress?.(day, DEMO_DAYS);
+        // Engine work is all promise callbacks; a macrotask now and then lets the page paint progress.
+        if (day % 6 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       },
     });
     world.provider.setMode('sync');
