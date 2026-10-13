@@ -115,7 +115,7 @@ The engine never reads the wall clock. Every method takes `now`, and the server 
 
 More from the demo: [the overview after "+1 week"](docs/screenshots/overview-after-a-week.png), [the webhook log](docs/screenshots/webhooks.png), [a past-due subscription on a phone, in Russian](docs/screenshots/phone-past-due-ru.png).
 
-What every store must do is one suite of 34 scenarios in [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). The core runs it on `MemoryStore`; the server runs it on `PgStore` with a freshly migrated schema per test ([`database.ts`](server/test/helpers/database.ts)).
+What every store must do is one suite of 35 scenarios in [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). The core runs it on `MemoryStore`; the server runs it on `PgStore` with a freshly migrated schema per test ([`database.ts`](server/test/helpers/database.ts)).
 
 ## Payrail webhooks: signatures, duplicates, late answers
 
@@ -198,7 +198,7 @@ LEDGERLINE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ledgerl
 npm run lint && npm run typecheck
 ```
 
-232 Vitest tests in 38 files, counted from Vitest's JSON reporter: 101 in `packages/core` (15 files), 82 in `server` (9 files) and 49 in `web` (14 files). Of those, 68 are the 34 shared scenarios, once on each store, the two random walks included. fast-check property tests cover proration (a full period gives the price, a credit never exceeds what was paid over any sequence of plan changes, lines sum to the total), `mulDivFloor` against the exact rational value, the calendar and the trial balance. Six tests in [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) write rows by hand to check the triggers and keys above. The HTTP tests go through Fastify's `inject` on both stores: auth, validation, `Idempotency-Key`, signatures that are good, expired, tampered or made with the previous secret, the 400-day clock limit and CORS. The web tests run in jsdom: the demo world, the plan change dialog, the clock bar, persistence, i18n and formatting. Without `LEDGERLINE_TEST_DATABASE_URL`, core and server run 131 tests and skip 40.
+234 Vitest tests in 38 files, counted from Vitest's JSON reporter: 102 in `packages/core` (15 files), 83 in `server` (9 files) and 49 in `web` (14 files). Of those, 70 are the 35 shared scenarios, once on each store, the two random walks included. fast-check property tests cover proration (a full period gives the price, a credit never exceeds what was paid over any sequence of plan changes, lines sum to the total), `mulDivFloor` against the exact rational value, the calendar and the trial balance. Six tests in [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) write rows by hand to check the triggers and keys above. The HTTP tests go through Fastify's `inject` on both stores: auth, validation, `Idempotency-Key`, signatures that are good, expired, tampered or made with the previous secret, the 400-day clock limit and CORS. The web tests run in jsdom: the demo world, the plan change dialog, the clock bar, persistence, i18n and formatting. Without `LEDGERLINE_TEST_DATABASE_URL`, core and server run 132 tests and skip 41.
 
 [`ci.yml`](.github/workflows/ci.yml) runs lint, `tsc -b`, the core and server tests against a `postgres:16-alpine` service and the server build in one job, and the dashboard's lint, typecheck, tests and both builds, for a server and for the demo, in another.
 
