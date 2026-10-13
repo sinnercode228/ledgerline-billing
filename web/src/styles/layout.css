@@ -526,14 +526,13 @@
     grid-area: 2 / 5;
   }
 
-  /* The phrases wrap: the failures, cancellations and write-offs come last and must stay visible. */
+  /* The phrases flow across the whole row and wrap: the failures, cancellations and write-offs come last and must stay visible. */
   .advance-summary-row {
-    flex-wrap: nowrap;
+    gap: 4px 6px;
   }
 
   .summary-phrases {
-    flex: 1 1 auto;
-    min-width: 0;
+    display: contents;
   }
 
   .side-note {
