@@ -10,11 +10,7 @@
     "migrate": "node dist/cli/migrate.js",
     "seed": "node dist/cli/seed.js",
     "serve": "node dist/cli/serve.js",
-    "worker": "node dist/cli/worker.js",
-    "dev:migrate": "tsx src/cli/migrate.ts",
-    "dev:seed": "tsx src/cli/seed.ts",
-    "dev:serve": "tsx watch src/cli/serve.ts",
-    "dev:worker": "tsx src/cli/worker.ts"
+    "worker": "node dist/cli/worker.js"
   },
   "dependencies": {
     "@ledgerline/core": "0.1.0",
@@ -25,7 +21,6 @@
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",
-    "tsx": "^4.23.15",
     "vitest": "^4.1.11"
   }
 }

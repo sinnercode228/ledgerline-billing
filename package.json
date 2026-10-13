@@ -18,7 +18,11 @@
     "typecheck": "tsc -b tsconfig.check.json",
     "test": "vitest run",
     "build": "tsc -b tsconfig.json",
-    "clean": "tsc -b tsconfig.json --clean"
+    "clean": "tsc -b tsconfig.json --clean",
+    "migrate": "node --env-file-if-exists=.env server/dist/cli/migrate.js",
+    "seed": "node --env-file-if-exists=.env server/dist/cli/seed.js",
+    "serve": "node --env-file-if-exists=.env server/dist/cli/serve.js",
+    "worker": "node --env-file-if-exists=.env server/dist/cli/worker.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
