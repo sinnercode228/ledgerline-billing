@@ -158,7 +158,7 @@ CREATE TABLE ledger_accounts (
 
 CREATE TABLE journal_transactions (
   id text PRIMARY KEY,
-  seq bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+  seq bigserial UNIQUE,
   kind text NOT NULL CHECK (kind IN ('invoice_finalized', 'payment_succeeded', 'downgrade_credit', 'credit_applied',
                                      'write_off', 'refund', 'overpayment_credit', 'reversal')),
   currency text NOT NULL CHECK (currency IN ('RUB', 'EUR')),
@@ -177,7 +177,7 @@ CREATE INDEX journal_transactions_invoice_idx ON journal_transactions (invoice_i
 -- Debits are positive, credits negative. The entry's currency must equal both
 -- its transaction's and its account's, so one transaction has one currency.
 CREATE TABLE journal_entries (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id bigserial PRIMARY KEY,
   transaction_id text NOT NULL,
   account_id text NOT NULL,
   currency text NOT NULL,
