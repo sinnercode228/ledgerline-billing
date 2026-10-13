@@ -50,6 +50,23 @@ describe('demo seed', () => {
     expect(statuses).toEqual(['Alder & Finch: trialing', 'Riverbend Logistics: past_due']);
   });
 
+  it('waits for an asynchronous onDay, so a page can repaint between days', async () => {
+    const provider = new FakePayrail();
+    const engine = new BillingEngine({ store: new MemoryStore(), provider });
+    const clockStillBehind: boolean[] = [];
+    await seedDemo({
+      engine,
+      provider,
+      end: new Date('2026-10-13T12:00:00Z'),
+      days: 5,
+      onDay: async (at) => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        clockStillBehind.push((await engine.getClock())! < at);
+      },
+    });
+    expect(clockStillBehind).toEqual([true, true, true, true, true]);
+  });
+
   it('refuses to seed a store that already has customers', async () => {
     const provider = new FakePayrail();
     const engine = new BillingEngine({ store: new MemoryStore(), provider });

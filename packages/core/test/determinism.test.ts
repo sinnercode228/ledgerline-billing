@@ -16,7 +16,15 @@ async function seededWorld(seed: number) {
   let now = new Date(end.getTime() - days * DAY_MS);
   const provider = new FakePayrail({ random: random.next, now: () => now });
   const engine = new BillingEngine({ store: new MemoryStore(), provider, ids: seededIds(random.next) });
-  await seedDemo({ engine, provider, end, days, onDay: (at) => (now = at) });
+  await seedDemo({
+    engine,
+    provider,
+    end,
+    days,
+    onDay: (at) => {
+      now = at;
+    },
+  });
   return engine;
 }
 

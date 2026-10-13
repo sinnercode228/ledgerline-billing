@@ -77,8 +77,8 @@ export interface DemoSeedOptions {
   end: Date;
   days?: number;
   story?: DemoStory;
-  /** Called as each simulated day starts, before its due work runs. */
-  onDay?: (at: Date) => void;
+  /** Called as each simulated day starts, before its due work runs; a returned promise is awaited. */
+  onDay?: (at: Date) => void | Promise<void>;
 }
 
 export interface DemoSeedSummary {
@@ -154,7 +154,7 @@ export async function seedDemo(options: DemoSeedOptions): Promise<DemoSeedSummar
     await deliverEvents(at);
     if (at >= end) break;
     at = new Date(Math.min(at.getTime() + DAY_MS, end.getTime()));
-    options.onDay?.(at);
+    await options.onDay?.(at);
     await engine.advanceClock(at);
     await deliverEvents(at);
   }
