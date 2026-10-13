@@ -9,7 +9,7 @@ RUN npm ci --workspace @ledgerline/core --workspace @ledgerline/server --include
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages/core packages/core
 COPY server server
-RUN npm run build \
+RUN npm run build:server \
  && npm prune --omit=dev --workspace @ledgerline/core --workspace @ledgerline/server --include-workspace-root
 
 FROM node:22-alpine AS runtime

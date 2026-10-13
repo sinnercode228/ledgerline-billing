@@ -38,8 +38,28 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+      - run: npx tsc -b tsconfig.check.json
+      - run: npx vitest run --project core --project server
+      - run: npm run build:server
 
-  # The dashboard (web/) gets its own job here.
+  web:
+    name: Dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint --workspace @ledgerline/web
+      - run: npm run typecheck --workspace @ledgerline/web
+      - run: npm test --workspace @ledgerline/web
+      - name: Build against an API
+        run: npm run build --workspace @ledgerline/web
+      - name: Build the in-browser demo
+        run: npm run build --workspace @ledgerline/web
+        env:
+          VITE_API_MODE: mock
+          BASE_PATH: /ledgerline-billing/

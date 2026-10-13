@@ -11,6 +11,8 @@ x-ledgerline: &ledgerline
     LEDGERLINE_TEST_CLOCK: ${LEDGERLINE_TEST_CLOCK:-1}
     LEDGERLINE_DUNNING_RETRY_DAYS: ${LEDGERLINE_DUNNING_RETRY_DAYS:-1,3,5}
     LEDGERLINE_PAYRAIL_WEBHOOK_URL: http://server:3000/webhooks/payrail
+    # Where the dashboard runs (npm run dev:web), so it may call the API from the browser.
+    LEDGERLINE_CORS_ORIGINS: ${LEDGERLINE_CORS_ORIGINS:-http://localhost:5173}
     LEDGERLINE_LOG_LEVEL: ${LEDGERLINE_LOG_LEVEL:-info}
 
 services:
