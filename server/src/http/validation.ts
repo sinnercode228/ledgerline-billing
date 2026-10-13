@@ -20,7 +20,10 @@ export function idempotencyKey(request: FastifyRequest): string {
   return key;
 }
 
-export const id = z.string().min(1).max(64);
+// Ids reach PostgreSQL as text, which cannot hold a NUL byte; refusing odd
+// characters here answers 400 instead of failing inside the query.
+export const id = z.string().regex(/^[\w-]{1,64}$/, 'an id is 1-64 letters, digits, "_" or "-"');
+export const accountId = z.string().regex(/^[\w:-]{1,100}$/, 'an account id is 1-100 letters, digits, "_", ":" or "-"');
 export const idParams = z.object({ id });
 
 export const pageQuery = z.object({

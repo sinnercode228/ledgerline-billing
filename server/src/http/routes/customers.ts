@@ -5,7 +5,13 @@ import type { ApiContext } from '../context.js';
 import { currency, id, idempotencyKey, idParams, pageQuery, parse } from '../validation.js';
 
 const newCustomer = z.object({
-  name: z.string().trim().min(1).max(200),
+  // PostgreSQL text cannot hold NUL, and no other control character belongs in a name.
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[^\p{Cc}]*$/u, 'control characters are not allowed'),
   email: z.email().max(320),
   currency,
 });

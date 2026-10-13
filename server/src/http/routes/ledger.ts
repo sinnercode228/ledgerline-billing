@@ -2,7 +2,7 @@ import { accountDto } from '@ledgerline/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ApiContext } from '../context.js';
-import { id, pageQuery, parse } from '../validation.js';
+import { accountId, id, pageQuery, parse } from '../validation.js';
 
 const POSTING_KINDS = [
   'invoice_finalized',
@@ -16,7 +16,7 @@ const POSTING_KINDS = [
 ] as const;
 
 const journalQuery = pageQuery.extend({
-  accountId: z.string().min(1).max(100).optional(),
+  accountId: accountId.optional(),
   invoiceId: id.optional(),
   kind: z.enum(POSTING_KINDS).optional(),
 });

@@ -158,6 +158,18 @@ describe.each(testStores())('HTTP: billing flow through the API on %s', (_name, 
     expect((await post('/v1/test-clock/advance', { to: '2020-01-01T00:00:00Z' })).json()).toMatchObject({ error: { code: 'invalid_argument' } });
   });
 
+  it('answers text the database cannot store with a validation error', async () => {
+    const lookups = ['/v1/customers/cus_%00', '/v1/invoices/in_%00', '/v1/subscriptions/sub_%00', '/v1/invoices?customerId=cus_%00', '/v1/ledger/journal?accountId=receivable%00'];
+    for (const url of lookups) {
+      const response = await get(url);
+      expect([url, response.statusCode]).toEqual([url, 400]);
+      expect(response.json()).toMatchObject({ error: { code: 'validation_failed' } });
+    }
+    const customer = await post('/v1/customers', { name: 'Nul\u0000 Labs', email: 'ap@nul.example.com', currency: 'EUR' }, { 'idempotency-key': 'cus-nul' });
+    expect(customer.statusCode).toBe(400);
+    expect((await get('/v1/customers')).json<{ data: unknown[] }>().data).toEqual([]);
+  });
+
   it('moves the test clock at most 400 days in one request, however the target is given', async () => {
     const far = await post('/v1/test-clock/advance', { to: '2027-03-09T00:00:00Z' });
     expect(far.statusCode).toBe(422);
