@@ -10,6 +10,7 @@ import { WebhooksPage } from '../features/webhooks/WebhooksPage';
 import { useI18n } from '../i18n/i18n';
 import { PageHeader } from '../ui/bits';
 import type { Connection } from './connection';
+import { PageBoundary } from './PageBoundary';
 import { Sidebar } from './Sidebar';
 import { hrefFor, useRoute, type Route } from './routes';
 
@@ -54,7 +55,9 @@ export function App({ connection }: { connection: Connection }) {
       <div className="shell">
         <Sidebar route={route} connection={connection} />
         <main className="content" id="main">
-          <Page route={route} />
+          <PageBoundary key={location}>
+            <Page route={route} />
+          </PageBoundary>
         </main>
       </div>
     </div>
