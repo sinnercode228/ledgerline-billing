@@ -59,6 +59,8 @@ api /v1/test-clock/advance -d '{"days":14}'   # пробный период ко
 
 Дни повторов берутся из `LEDGERLINE_DUNNING_RETRY_DAYS` (по умолчанию `1,3,5`) и отсчитываются от первой неудачи, а не от предыдущей попытки ([`dunning.ts`](packages/core/src/dunning.ts)). Повторы из-за новой карты расписание не расходуют: привязка карты или выбор другой карты по умолчанию сразу повторяет все неоплаченные счета с триггером `payment_method_updated` ([`customers.ts`](packages/core/src/engine/customers.ts)). Когда расписание кончается, `giveUp` списывает остаток долга по каждому открытому счёту подписки и завершает её ([`payment-results.ts`](packages/core/src/engine/payment-results.ts#L173-L212)).
 
+Разбор цикла повторов, который до коммита `b8aabf0` списывал один счёт дважды, а оборотная ведомость оставалась в нуле, и инвариантов, которые это ловят: [Оборотная ведомость сходилась в ноль, а счёт списали дважды](https://github.com/sinnercode228/sinnercode228/blob/main/notes/ledgerline-balanced-but-wrong.ru.md).
+
 ## Почему оборотная ведомость всегда сходится
 
 Счетов учёта пять видов: `receivable:<клиент>`, `customer_credit:<клиент>`, `revenue:<валюта>`, `provider_clearing:<валюта>` и `bad_debt:<валюта>`. Суммы со знаком, дебет положительный. Каждую проводку движок строит одной функцией `transfer(kind, input, debit, credit)` из [`ledger.ts`](packages/core/src/ledger.ts) — две строки на одну сумму — либо зеркально отражает уже существующую (`reversePosting`), и перед записью `assertBalanced` проверяет её ещё раз. Это защита от ошибок в самом движке. База проверяет всё заново сама, кто бы в неё ни писал ([`002_ledger_guards.sql`](server/migrations/002_ledger_guards.sql#L7-L50)):

@@ -59,6 +59,8 @@ Amounts are integer kopecks. [`proration.ts`](packages/core/src/proration.ts) wo
 
 Retry days come from `LEDGERLINE_DUNNING_RETRY_DAYS` (default `1,3,5`) and count from the first failure, not from the previous attempt ([`dunning.ts`](packages/core/src/dunning.ts)). Retries started by a new card do not use up the schedule: attaching a card or choosing another default retries every failing invoice at once, with trigger `payment_method_updated` ([`customers.ts`](packages/core/src/engine/customers.ts)). When the schedule runs out, `giveUp` writes off what each open invoice of the subscription still owes and ends the subscription ([`payment-results.ts`](packages/core/src/engine/payment-results.ts#L173-L212)).
 
+Write-up on the retry loop that, before commit `b8aabf0`, wrote one invoice off twice while the trial balance stayed at zero, and on the invariants that catch it: [The trial balance was zero and the invoice was written off twice](https://github.com/sinnercode228/sinnercode228/blob/main/notes/ledgerline-balanced-but-wrong.md).
+
 ## Why the trial balance stays at zero
 
 There are five kinds of account: `receivable:<customer>`, `customer_credit:<customer>`, `revenue:<currency>`, `provider_clearing:<currency>` and `bad_debt:<currency>`. Amounts are signed, debit positive. Every posting the engine makes comes from one `transfer(kind, input, debit, credit)` in [`ledger.ts`](packages/core/src/ledger.ts), two lines of the same amount, or is the mirror image of one (`reversePosting`), and `assertBalanced` checks it once more before it is written. That guards against mistakes in the engine. The database checks again on its own, whatever code writes to it ([`002_ledger_guards.sql`](server/migrations/002_ledger_guards.sql#L7-L50)):
