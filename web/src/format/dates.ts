@@ -15,12 +15,21 @@ export type DateStyle = keyof typeof STYLES;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
-export function formatDate(iso: string, style: DateStyle, language: Language): string {
+function formatter(style: DateStyle, language: Language): Intl.DateTimeFormat {
   const key = `${language}:${style}`;
   let format = formatters.get(key);
   if (!format) {
     format = new Intl.DateTimeFormat(INTL_LOCALE[language], { ...STYLES[style], timeZone: 'UTC' });
     formatters.set(key, format);
   }
-  return format.format(new Date(iso));
+  return format;
+}
+
+export function formatDate(iso: string, style: DateStyle, language: Language): string {
+  return formatter(style, language).format(new Date(iso));
+}
+
+/** A billing period with what its ends share written once: "10 – 25 Nov 2026", "30 Oct – 30 Nov 2026". */
+export function formatPeriod(startIso: string, endIso: string, language: Language): string {
+  return formatter('date', language).formatRange(new Date(startIso), new Date(endIso));
 }

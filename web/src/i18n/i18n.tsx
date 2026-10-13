@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Currency } from '@ledgerline/core';
-import { formatDate, type DateStyle } from '../format/dates';
+import { formatDate, formatPeriod, type DateStyle } from '../format/dates';
 import { formatMinorUnits, formatMoney } from '../format/money';
 import { INTL_LOCALE, isLanguage, type Language } from './locale';
 import { en, ru, type MessageKey, type Messages, type Plural } from './messages';
@@ -33,6 +33,7 @@ export interface I18n {
   /** Minor units without a currency symbol, for columns that name the currency. */
   amount: (amount: number) => string;
   date: (iso: string, style?: DateStyle) => string;
+  period: (startIso: string, endIso: string) => string;
 }
 
 export function createI18n(language: Language, setLanguage: (language: Language) => void = () => undefined): I18n {
@@ -49,6 +50,7 @@ export function createI18n(language: Language, setLanguage: (language: Language)
     money: (amount, currency) => formatMoney(amount, currency, language),
     amount: (amount) => formatMinorUnits(amount, language),
     date: (iso, style = 'date') => formatDate(iso, style, language),
+    period: (startIso, endIso) => formatPeriod(startIso, endIso, language),
   };
 }
 

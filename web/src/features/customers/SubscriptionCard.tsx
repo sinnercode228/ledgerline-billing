@@ -20,11 +20,11 @@ interface SubscriptionCardProps {
 }
 
 function HistoryLine({ event, plans, subscription }: { event: HistoryEvent; plans: readonly PlanDto[]; subscription: SubscriptionDto }) {
-  const { t, date } = useI18n();
+  const { t, period } = useI18n();
   const text = {
     subscribed: () => t('history.subscribed', { plan: planLabel(plans, event.planId ?? subscription.planId) }),
     trialEnded: () => t('history.trialEnded'),
-    renewed: () => t('history.renewed', { period: event.invoice ? `${date(event.invoice.periodStart)} – ${date(event.invoice.periodEnd)}` : '' }),
+    renewed: () => t('history.renewed', { period: event.invoice ? period(event.invoice.periodStart, event.invoice.periodEnd) : '' }),
     prorated: () => t('history.prorated'),
     downgradeCredit: () => t('history.downgradeCredit'),
     paymentFailed: () => t('history.paymentFailed'),

@@ -112,9 +112,7 @@ export function ChangePlanDialog({ subscription, plans, onClose, onChanged }: Ch
                   <tr key={line.kind}>
                     <td>
                       {lineDescription(i18n, plans, line)}
-                      <span className="cell-sub">
-                        {date(line.periodStart)} – {date(line.periodEnd)}
-                      </span>
+                      <span className="cell-sub">{i18n.period(line.periodStart, line.periodEnd)}</span>
                     </td>
                     <td className="cell-num">
                       <Money amount={line.amount} currency={preview.preview.currency} />

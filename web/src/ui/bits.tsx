@@ -15,9 +15,10 @@ export function DateText({ iso, style = 'date' }: { iso: string | null; style?: 
 }
 
 export function PeriodText({ start, end }: { start: string; end: string }) {
+  const { period } = useI18n();
   return (
-    <span className="nowrap">
-      <DateText iso={start} /> – <DateText iso={end} />
+    <span className="nowrap" title={`${start} – ${end}`}>
+      {period(start, end)}
     </span>
   );
 }
