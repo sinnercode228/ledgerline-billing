@@ -23,6 +23,27 @@ export type PaymentLocator =
 
 export type ApplyOutcome = 'applied' | 'duplicate' | 'stale' | 'unmatched';
 
+/** What applying payment outcomes changed; due work sums these into its report. */
+export interface PaymentEffects {
+  succeeded: number;
+  failed: number;
+  /** Invoices written off because dunning ran out of retries. */
+  writtenOff: number;
+  /** Subscriptions that dunning canceled. */
+  canceled: number;
+}
+
+export const noEffects = (): PaymentEffects => ({ succeeded: 0, failed: 0, writtenOff: 0, canceled: 0 });
+
+export function addEffects(a: PaymentEffects, b: PaymentEffects): PaymentEffects {
+  return {
+    succeeded: a.succeeded + b.succeeded,
+    failed: a.failed + b.failed,
+    writtenOff: a.writtenOff + b.writtenOff,
+    canceled: a.canceled + b.canceled,
+  };
+}
+
 async function locatePayment(tx: StoreTx, locator: PaymentLocator): Promise<Payment | null> {
   if ('paymentId' in locator) return tx.getPayment(locator.paymentId);
   const linked = await tx.findPaymentByProviderId(locator.providerPaymentId);
@@ -47,9 +68,9 @@ export async function applyPaymentResult(
   locator: PaymentLocator,
   result: PaymentResult,
   now: Date,
-): Promise<{ outcome: ApplyOutcome; payment: Payment | null }> {
+): Promise<{ outcome: ApplyOutcome; payment: Payment | null; effects: PaymentEffects }> {
   const located = await locatePayment(tx, locator);
-  if (!located) return { outcome: 'unmatched', payment: null };
+  if (!located) return { outcome: 'unmatched', payment: null, effects: noEffects() };
 
   const subscription = await requireSubscription(tx, located.subscriptionId, 'for_update');
   const invoice = await requireInvoice(tx, located.invoiceId, 'for_update');
@@ -57,7 +78,7 @@ export async function applyPaymentResult(
   if (!payment) throw new BillingError('not_found', `payment ${located.id} disappeared`);
 
   const decision = decidePaymentUpdate(payment.status, result.status);
-  if (decision !== 'apply') return { outcome: decision, payment };
+  if (decision !== 'apply') return { outcome: decision, payment, effects: noEffects() };
 
   const updated: Payment = {
     ...payment,
@@ -70,10 +91,10 @@ export async function applyPaymentResult(
 
   if (result.status === 'succeeded') {
     await settleWithPayment(ctx, tx, { subscription, invoice, payment: updated, now });
-  } else {
-    await handleFailedPayment(ctx, tx, { subscription, invoice, now });
+    return { outcome: 'applied', payment: updated, effects: { ...noEffects(), succeeded: 1 } };
   }
-  return { outcome: 'applied', payment: updated };
+  const effects = await handleFailedPayment(ctx, tx, { subscription, invoice, now });
+  return { outcome: 'applied', payment: updated, effects };
 }
 
 async function hasFailingInvoices(tx: StoreTx, subscriptionId: string): Promise<boolean> {
@@ -127,10 +148,11 @@ export async function handleFailedPayment(
   ctx: EngineContext,
   tx: StoreTx,
   input: { subscription: Subscription; invoice: Invoice; now: Date },
-): Promise<void> {
+): Promise<PaymentEffects> {
   const { subscription, invoice, now } = input;
+  const failed = { ...noEffects(), failed: 1 };
   // A failure for an invoice that is already settled or closed is history only.
-  if (invoice.status !== 'open') return;
+  if (invoice.status !== 'open') return failed;
 
   const firstFailedAt = invoice.firstFailedAt ?? now;
   const decision: DunningDecision =
@@ -143,13 +165,17 @@ export async function handleFailedPayment(
     if (subscription.status !== 'past_due') {
       await tx.updateSubscription({ ...subscription, status: transition(subscription.status, 'payment_failed'), updatedAt: now });
     }
-    return;
+    return failed;
   }
-  await giveUp(ctx, tx, { subscription, failedInvoice: { ...invoice, firstFailedAt }, now });
+  return addEffects(failed, await giveUp(ctx, tx, { subscription, failedInvoice: { ...invoice, firstFailedAt }, now }));
 }
 
 /** Dunning is exhausted: every open invoice is written off and the subscription ends. */
-async function giveUp(ctx: EngineContext, tx: StoreTx, input: { subscription: Subscription; failedInvoice: Invoice; now: Date }): Promise<void> {
+async function giveUp(
+  ctx: EngineContext,
+  tx: StoreTx,
+  input: { subscription: Subscription; failedInvoice: Invoice; now: Date },
+): Promise<PaymentEffects> {
   const { subscription, failedInvoice, now } = input;
   const open = await tx.listInvoices({ subscriptionId: subscription.id, status: 'open' });
   for (const stored of open) {
@@ -182,4 +208,5 @@ async function giveUp(ctx: EngineContext, tx: StoreTx, input: { subscription: Su
       updatedAt: now,
     });
   }
+  return { ...noEffects(), writtenOff: open.length, canceled: subscription.status === 'canceled' ? 0 : 1 };
 }

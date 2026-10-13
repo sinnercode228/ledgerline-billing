@@ -8,7 +8,7 @@ import type { StoreTx } from '../ports/store.js';
 import type { Subscription } from '../subscription.js';
 import type { EngineContext } from './context.js';
 import { outstanding } from './invoicing.js';
-import { applyPaymentResult, handleFailedPayment } from './payment-results.js';
+import { addEffects, applyPaymentResult, handleFailedPayment, noEffects, type PaymentEffects } from './payment-results.js';
 
 /** A payment recorded as pending, to be sent to the provider after the transaction commits. */
 export interface ChargeIntent {
@@ -19,6 +19,12 @@ export interface ChargeIntent {
   currency: Currency;
   paymentMethodToken: string;
   idempotencyKey: string;
+}
+
+/** The payment to send once the transaction commits, or, when it failed at once, what that led to. */
+export interface StartedPayment {
+  intent: ChargeIntent | null;
+  effects: PaymentEffects;
 }
 
 function intentFor(payment: Payment, method: PaymentMethod): ChargeIntent {
@@ -47,10 +53,10 @@ export async function startPayment(
   ctx: EngineContext,
   tx: StoreTx,
   input: { subscription: Subscription; customer: Customer; invoice: Invoice; trigger: PaymentTrigger; now: Date },
-): Promise<ChargeIntent | null> {
+): Promise<StartedPayment> {
   const { subscription, customer, invoice, trigger, now } = input;
   const amount = outstanding(invoice);
-  if (invoice.status !== 'open' || amount <= 0) return null;
+  if (invoice.status !== 'open' || amount <= 0) return { intent: null, effects: noEffects() };
 
   const attempt = invoice.attemptCount + 1;
   const method = customer.defaultPaymentMethodId === null ? null : await tx.getPaymentMethod(customer.defaultPaymentMethodId);
@@ -77,14 +83,13 @@ export async function startPayment(
   await tx.insertPayment(payment);
 
   if (!method) {
-    await handleFailedPayment(ctx, tx, { subscription, invoice: attempted, now });
-    return null;
+    return { intent: null, effects: await handleFailedPayment(ctx, tx, { subscription, invoice: attempted, now }) };
   }
-  return intentFor(payment, method);
+  return { intent: intentFor(payment, method), effects: noEffects() };
 }
 
 /** Sends a recorded payment to the provider and applies the answer in a new transaction. */
-export async function executeCharge(ctx: EngineContext, intent: ChargeIntent, now: Date): Promise<void> {
+export async function executeCharge(ctx: EngineContext, intent: ChargeIntent, now: Date): Promise<PaymentEffects> {
   let answer: ProviderPayment;
   try {
     answer = await ctx.provider.createPayment({
@@ -101,24 +106,25 @@ export async function executeCharge(ctx: EngineContext, intent: ChargeIntent, no
     const details = { paymentId: intent.paymentId, invoiceId: intent.invoiceId, error: message };
     if (error instanceof ProviderUnavailableError) ctx.logger.warn(details, 'payment provider unavailable');
     else ctx.logger.error(details, 'payment provider rejected the request');
-    return;
+    return noEffects();
   }
 
-  await ctx.store.run(async (tx) => {
+  return ctx.store.run(async (tx) => {
     if (answer.status === 'pending') {
       const payment = await tx.getPayment(intent.paymentId, 'for_update');
       if (payment && payment.providerPaymentId === null) {
         await tx.updatePayment({ ...payment, providerPaymentId: answer.id, updatedAt: now });
       }
-      return;
+      return noEffects();
     }
-    await applyPaymentResult(
+    const { effects } = await applyPaymentResult(
       ctx,
       tx,
       { paymentId: intent.paymentId },
       { status: answer.status, failureCode: answer.failureCode, providerPaymentId: answer.id },
       now,
     );
+    return effects;
   });
 }
 
@@ -127,10 +133,11 @@ export async function executeCharge(ctx: EngineContext, intent: ChargeIntent, no
  * timeout or a crash between recording the payment and calling the provider.
  * The same idempotency key makes the repeated call safe.
  */
-export async function retryStalePayments(ctx: EngineContext, now: Date): Promise<number> {
+export async function retryStalePayments(ctx: EngineContext, now: Date): Promise<{ retried: number; effects: PaymentEffects }> {
   const cutoff = new Date(now.getTime() - ctx.pendingPaymentRetryAfterMs);
   const seen: string[] = [];
   let retried = 0;
+  let effects = noEffects();
   for (;;) {
     const intent = await ctx.store.run(async (tx) => {
       const payment = await tx.claimStalePendingPayment(cutoff, seen);
@@ -141,8 +148,8 @@ export async function retryStalePayments(ctx: EngineContext, now: Date): Promise
       if (!method) throw new BillingError('not_found', `pending payment ${payment.id} has no payment method`);
       return intentFor(payment, method);
     });
-    if (!intent) return retried;
-    await executeCharge(ctx, intent, now);
+    if (!intent) return { retried, effects };
+    effects = addEffects(effects, await executeCharge(ctx, intent, now));
     retried += 1;
   }
 }

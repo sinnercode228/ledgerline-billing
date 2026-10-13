@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MINUTE_MS } from '../../calendar.js';
+import { MINUTE_MS, utcDay } from '../../calendar.js';
+import type { DueWorkReport } from '../../engine/due-work.js';
 import type { PayrailEvent } from '../../payrail/events.js';
 import { at, expectBalancedLedger, useStore, type StoreFactory } from '../harness.js';
 import { BillingWorld } from '../world.js';
@@ -198,6 +199,30 @@ export function paymentScenarios(factory: StoreFactory): void {
       await world.advanceDays(40);
       expect(await world.engine.listInvoices({ subscriptionId: subscription.id })).toHaveLength(1);
       await expectBalancedLedger(world.engine);
+    });
+
+    it('reports what each day did: payments, failures, write-offs and cancellations', async () => {
+      const world = await BillingWorld.create(store(), at('2026-03-10T12:00:00Z'));
+      const { customer: declined } = await world.customer('Saltmarsh Media', 'RUB', 'declined');
+      await world.engine.createSubscription({ customerId: declined.id, planId: 'plan_business_monthly' }, world.now);
+      const { customer: paying } = await world.customer('Pinegrove Studio', 'RUB', 'succeeds');
+      await world.engine.createSubscription({ customerId: paying.id, planId: 'plan_starter_monthly' }, world.now);
+      const { customer: cardless } = await world.customer('Juniper Events', 'EUR');
+      await world.engine.createSubscription({ customerId: cardless.id, planId: 'plan_starter_monthly' }, world.now);
+
+      const reports = new Map<string, DueWorkReport>();
+      await world.advanceDays(14, (day, report) => void reports.set(utcDay(day), report));
+      const summary = (day: string) => {
+        const { trialsEnded, renewals, retries, canceled, paymentsSucceeded, paymentsFailed, writtenOff } = reports.get(day)!;
+        return { trialsEnded, renewals, retries, canceled, paymentsSucceeded, paymentsFailed, writtenOff };
+      };
+      const quiet = { trialsEnded: 0, renewals: 0, retries: 0, canceled: 0, paymentsSucceeded: 0, paymentsFailed: 0, writtenOff: 0 };
+
+      expect(summary('2026-03-11')).toEqual({ ...quiet, retries: 1, paymentsFailed: 1 });
+      expect(summary('2026-03-12')).toEqual(quiet);
+      expect(summary('2026-03-13')).toEqual({ ...quiet, retries: 1, paymentsFailed: 1 });
+      expect(summary('2026-03-15')).toEqual({ ...quiet, retries: 1, paymentsFailed: 1, writtenOff: 1, canceled: 1 });
+      expect(summary('2026-03-24')).toEqual({ ...quiet, trialsEnded: 2, paymentsSucceeded: 1, paymentsFailed: 1 });
     });
 
     it('recovers when a scheduled retry succeeds', async () => {

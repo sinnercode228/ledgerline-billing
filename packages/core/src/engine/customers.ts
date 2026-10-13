@@ -101,7 +101,7 @@ export async function retryPastDueInvoices(ctx: EngineContext, customerId: strin
       for (const invoice of failing) {
         if (await hasPaymentInFlight(tx, invoice.id)) continue;
         const current = await requireSubscription(tx, id);
-        const intent = await startPayment(ctx, tx, { subscription: current, customer, invoice, trigger: 'payment_method_updated', now });
+        const { intent } = await startPayment(ctx, tx, { subscription: current, customer, invoice, trigger: 'payment_method_updated', now });
         if (intent) started.push(intent);
       }
       return started;

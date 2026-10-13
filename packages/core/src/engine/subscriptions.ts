@@ -82,7 +82,7 @@ export async function createSubscription(
         lines: cycleLines({ plan, price, periodStart: start, periodEnd: end }),
         now,
       });
-      intent = await startPayment(ctx, tx, { subscription, customer, invoice, trigger: 'initial', now });
+      ({ intent } = await startPayment(ctx, tx, { subscription, customer, invoice, trigger: 'initial', now }));
     }
     if (idempotencyKey !== undefined) {
       await rememberResult(tx, { scope: 'subscriptions.create', key: idempotencyKey, fingerprint, resourceId: base.id, now });

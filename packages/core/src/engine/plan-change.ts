@@ -98,7 +98,7 @@ export async function changePlan(
         now,
       });
       invoiceId = invoice.id;
-      intent = await startPayment(ctx, tx, { subscription: updated, customer, invoice, trigger: 'initial', now });
+      ({ intent } = await startPayment(ctx, tx, { subscription: updated, customer, invoice, trigger: 'initial', now }));
     } else if (preview.effect === 'customer_credit') {
       await post(
         tx,

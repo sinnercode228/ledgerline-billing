@@ -6,13 +6,20 @@ import { executeCharge, hasPaymentInFlight, retryStalePayments, startPayment, ty
 import type { EngineContext } from './context.js';
 import { issueInvoice } from './invoicing.js';
 import { requireCustomer, requirePlan, requireSubscription } from './lookups.js';
+import { addEffects, noEffects, type PaymentEffects } from './payment-results.js';
 
 export interface DueWorkReport {
   trialsEnded: number;
   renewals: number;
   retries: number;
+  /** Subscriptions that ended: canceled at the period end, or by dunning after the last retry. */
   canceled: number;
+  /** Pending payments asked about again because their answer never arrived. */
   recoveredPayments: number;
+  paymentsSucceeded: number;
+  paymentsFailed: number;
+  /** Invoices written off as uncollectible. */
+  writtenOff: number;
   errors: Array<{ subscriptionId: string; message: string }>;
 }
 
@@ -21,6 +28,8 @@ type StepKind = 'trial_ended' | 'renewed' | 'retried' | 'canceled';
 interface Step {
   kind: StepKind;
   intents: ChargeIntent[];
+  /** Payments that failed inside the step, before reaching the provider. */
+  effects: PaymentEffects;
 }
 
 /** Guards against a bug turning the claim loop into an endless one. */
@@ -33,7 +42,17 @@ const MAX_STEPS = 100_000;
  * period however many workers race for it.
  */
 export async function runDueWork(ctx: EngineContext, now: Date): Promise<DueWorkReport> {
-  const report: DueWorkReport = { trialsEnded: 0, renewals: 0, retries: 0, canceled: 0, recoveredPayments: 0, errors: [] };
+  const report: DueWorkReport = {
+    trialsEnded: 0,
+    renewals: 0,
+    retries: 0,
+    canceled: 0,
+    recoveredPayments: 0,
+    paymentsSucceeded: 0,
+    paymentsFailed: 0,
+    writtenOff: 0,
+    errors: [],
+  };
   const skip: string[] = [];
   for (let i = 0; i < MAX_STEPS; i++) {
     const claim: { id: string | null } = { id: null };
@@ -56,10 +75,21 @@ export async function runDueWork(ctx: EngineContext, now: Date): Promise<DueWork
     }
     if (!step) break;
     tally(report, step.kind);
-    for (const intent of step.intents) await executeCharge(ctx, intent, now);
+    let effects = step.effects;
+    for (const intent of step.intents) effects = addEffects(effects, await executeCharge(ctx, intent, now));
+    count(report, effects);
   }
-  report.recoveredPayments = await retryStalePayments(ctx, now);
+  const recovered = await retryStalePayments(ctx, now);
+  report.recoveredPayments = recovered.retried;
+  count(report, recovered.effects);
   return report;
+}
+
+function count(report: DueWorkReport, effects: PaymentEffects): void {
+  report.paymentsSucceeded += effects.succeeded;
+  report.paymentsFailed += effects.failed;
+  report.writtenOff += effects.writtenOff;
+  report.canceled += effects.canceled;
 }
 
 function tally(report: DueWorkReport, kind: StepKind): void {
@@ -91,7 +121,7 @@ async function advance(ctx: EngineContext, tx: StoreTx, subscription: Subscripti
       endedAt: subscription.currentPeriodEnd,
       updatedAt: now,
     });
-    return { kind: 'canceled', intents: [] };
+    return { kind: 'canceled', intents: [], effects: noEffects() };
   }
 
   const plan = await requirePlan(tx, subscription.planId);
@@ -115,8 +145,8 @@ async function advance(ctx: EngineContext, tx: StoreTx, subscription: Subscripti
     lines: cycleLines({ plan, price: priceFor(plan, renewed.currency), periodStart: period.start, periodEnd: period.end }),
     now,
   });
-  const intent = await startPayment(ctx, tx, { subscription: renewed, customer, invoice, trigger: 'initial', now });
-  return { kind: wasTrialing ? 'trial_ended' : 'renewed', intents: intent ? [intent] : [] };
+  const { intent, effects } = await startPayment(ctx, tx, { subscription: renewed, customer, invoice, trigger: 'initial', now });
+  return { kind: wasTrialing ? 'trial_ended' : 'renewed', intents: intent ? [intent] : [], effects };
 }
 
 async function retryDueInvoices(ctx: EngineContext, tx: StoreTx, subscription: Subscription, now: Date): Promise<Step> {
@@ -125,6 +155,7 @@ async function retryDueInvoices(ctx: EngineContext, tx: StoreTx, subscription: S
     (invoice) => invoice.nextRetryAt !== null && invoice.nextRetryAt <= now,
   );
   const intents: ChargeIntent[] = [];
+  let effects = noEffects();
   for (const invoice of due) {
     if (await hasPaymentInFlight(tx, invoice.id)) {
       // The outcome of the payment in flight decides the next retry.
@@ -133,8 +164,9 @@ async function retryDueInvoices(ctx: EngineContext, tx: StoreTx, subscription: S
     }
     const current = await requireSubscription(tx, subscription.id);
     const counted = { ...invoice, scheduledRetries: invoice.scheduledRetries + 1 };
-    const intent = await startPayment(ctx, tx, { subscription: current, customer, invoice: counted, trigger: 'scheduled_retry', now });
-    if (intent) intents.push(intent);
+    const started = await startPayment(ctx, tx, { subscription: current, customer, invoice: counted, trigger: 'scheduled_retry', now });
+    if (started.intent) intents.push(started.intent);
+    effects = addEffects(effects, started.effects);
   }
-  return { kind: 'retried', intents };
+  return { kind: 'retried', intents, effects };
 }
