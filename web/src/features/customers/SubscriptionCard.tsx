@@ -68,6 +68,7 @@ export function SubscriptionCard({ subscription, plans, invoices, downgradeCredi
   const plan = plans.find((candidate) => candidate.id === subscription.planId);
   const price = plan?.prices[subscription.currency];
   const live = subscription.status === 'active' || subscription.status === 'trialing';
+  const unpaid = subscription.status === 'past_due' ? invoices.find((invoice) => invoice.subscriptionId === subscription.id && invoice.status === 'open' && invoice.firstFailedAt !== null) : undefined;
   const changeable = live && plans.some((other) => other.id !== plan?.id && other.interval === plan?.interval && other.prices[subscription.currency] !== undefined);
 
   async function toggleCancel() {
@@ -124,6 +125,16 @@ export function SubscriptionCard({ subscription, plans, invoices, downgradeCredi
             )}
           </dd>
         </div>
+        {unpaid && (
+          <div>
+            <dt>{t('customer.dunning')}</dt>
+            <dd className="text-warning">
+              {unpaid.nextRetryAt
+                ? t('customer.nextRetry', { attempts: unpaid.attemptCount, date: i18n.date(unpaid.nextRetryAt) })
+                : t('customer.retriesUsed', { attempts: unpaid.attemptCount })}
+            </dd>
+          </div>
+        )}
         {subscription.cancelAtPeriodEnd && subscription.status !== 'canceled' && (
           <div>
             <dt>{t('common.status')}</dt>
