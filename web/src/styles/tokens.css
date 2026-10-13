@@ -1,0 +1,99 @@
+:root {
+  color-scheme: light;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-sunken: #f8f9fb;
+  --surface-hover: #f2f5f9;
+  --border: #e1e4ea;
+  --border-strong: #cdd2da;
+  --text: #151922;
+  --text-muted: #596171;
+  --text-faint: #858d9b;
+
+  --accent: #1d4f8f;
+  --accent-hover: #163f74;
+  --accent-soft: #e7eef8;
+  --accent-text: #ffffff;
+  --focus: #2f6fd0;
+
+  --positive: #17703f;
+  --positive-soft: #e3f3ea;
+  --info: #1f5aa6;
+  --info-soft: #e6eefa;
+  --warning: #8f5300;
+  --warning-soft: #fbefd9;
+  --negative: #b3261e;
+  --negative-soft: #fbe7e5;
+  --neutral: #5a6270;
+  --neutral-soft: #eceef2;
+
+  --chart-bar: #2c64ad;
+  --chart-bar-hover: #1d4f8f;
+  --chart-grid: #e8ebef;
+
+  --topbar-bg: #12233b;
+  --topbar-text: #e8eef6;
+  --topbar-muted: #9fb0c6;
+  --topbar-border: #23395a;
+  --topbar-button: #1c3352;
+  --topbar-button-hover: #264468;
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 4%);
+  --shadow-lg: 0 12px 32px rgb(16 24 40 / 18%);
+  --gutter: 24px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --surface: #151b23;
+  --surface-sunken: #11161d;
+  --surface-hover: #1b222c;
+  --border: #252d39;
+  --border-strong: #333d4b;
+  --text: #e4e8ee;
+  --text-muted: #9aa4b2;
+  --text-faint: #6f7a89;
+
+  --accent: #7fb0f0;
+  --accent-hover: #a2c6f5;
+  --accent-soft: #1a2a40;
+  --accent-text: #0d1117;
+  --focus: #7fb0f0;
+
+  --positive: #5fc893;
+  --positive-soft: #14291f;
+  --info: #7fb0f0;
+  --info-soft: #172638;
+  --warning: #e5ab55;
+  --warning-soft: #2d2415;
+  --negative: #f08a80;
+  --negative-soft: #331a1b;
+  --neutral: #a3acb9;
+  --neutral-soft: #222a35;
+
+  --chart-bar: #5f97de;
+  --chart-bar-hover: #8ab6ee;
+  --chart-grid: #222a35;
+
+  --topbar-bg: #0a1220;
+  --topbar-text: #e4e8ee;
+  --topbar-muted: #8e9db2;
+  --topbar-border: #1e2b3e;
+  --topbar-button: #16223a;
+  --topbar-button-hover: #1f3050;
+
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-lg: 0 16px 40px rgb(0 0 0 / 55%);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --gutter: 16px;
+  }
+}

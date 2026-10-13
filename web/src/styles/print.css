@@ -1,0 +1,48 @@
+/* An invoice prints as a document: no app chrome, black on white. */
+@media print {
+  :root,
+  :root[data-theme='dark'] {
+    --bg: #fff;
+    --surface: #fff;
+    --surface-sunken: #fff;
+    --text: #000;
+    --text-muted: #444;
+    --border: #ccc;
+    --border-strong: #999;
+    --shadow: none;
+  }
+
+  .topbar,
+  .sidebar,
+  .page-actions,
+  .back-link,
+  .pager,
+  .chart-table-toggle {
+    display: none !important;
+  }
+
+  .shell {
+    display: block;
+  }
+
+  .content {
+    padding: 0;
+  }
+
+  .card {
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .grid-main-side {
+    grid-template-columns: 1fr;
+  }
+
+  .table-scroll {
+    overflow: visible;
+  }
+
+  a {
+    color: inherit;
+  }
+}

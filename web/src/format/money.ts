@@ -35,3 +35,14 @@ export function formatMoney(amount: number, currency: Currency, language: Langua
 export function formatMinorUnits(amount: number, language: Language): string {
   return formatter(language, null).format(toDecimal(amount));
 }
+
+/** Short axis labels such as ₽30K; precise amounts belong in tooltips and tables. */
+export function formatCompactMoney(amount: number, currency: Currency, language: Language): string {
+  return new Intl.NumberFormat(INTL_LOCALE[language], {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(amount / 100);
+}
