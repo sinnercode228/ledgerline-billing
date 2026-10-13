@@ -264,12 +264,11 @@ class MemoryTx implements StoreTx {
 
   async insertInvoice(invoice: Invoice) {
     this.requireRow(this.s.subscriptions, invoice.subscriptionId);
-    const clash = [...this.s.invoices.values()].some(
-      (i) =>
-        i.subscriptionId === invoice.subscriptionId &&
-        i.kind === invoice.kind &&
-        i.periodStart.getTime() === invoice.periodStart.getTime(),
-    );
+    const clash =
+      invoice.kind === 'cycle' &&
+      [...this.s.invoices.values()].some(
+        (i) => i.subscriptionId === invoice.subscriptionId && i.kind === 'cycle' && i.periodStart.getTime() === invoice.periodStart.getTime(),
+      );
     if (clash) {
       throw new BillingError('duplicate_invoice', `subscription ${invoice.subscriptionId} is already billed for this period`);
     }

@@ -78,7 +78,7 @@ export interface StoreTx {
    */
   claimDueSubscription(now: Date, skip: readonly string[]): Promise<Subscription | null>;
 
-  /** Rejects with `duplicate_invoice` when (subscription, period start, kind) is already billed. */
+  /** Rejects with `duplicate_invoice` when a cycle invoice already bills this subscription's period start. */
   insertInvoice(invoice: Invoice): Promise<void>;
   getInvoice(id: string, lock?: Lock): Promise<Invoice | null>;
   /** Lines are written once on insert; updates change status, amounts and dunning fields. */

@@ -43,6 +43,25 @@ export function planChangeScenarios(factory: StoreFactory): void {
       await expectBalancedLedger(world.engine);
     });
 
+    it('invoices a second upgrade made at the same instant as an earlier one', async () => {
+      // On the test clock time stands still between requests, so this is an ordinary sequence there.
+      const world = await BillingWorld.create(store(), at('2026-02-01T00:00:00Z'));
+      const { customer } = await world.customer('Fernhill Clinic', 'EUR', 'succeeds');
+      const subscription = await world.engine.createSubscription({ customerId: customer.id, planId: 'plan_business_monthly' }, world.now);
+      await world.advanceDays(10);
+
+      await world.engine.changePlan(subscription.id, 'plan_starter_monthly', world.now);
+      const first = await world.engine.changePlan(subscription.id, 'plan_team_monthly', world.now);
+      await world.engine.changePlan(subscription.id, 'plan_starter_monthly', world.now);
+      const second = await world.engine.changePlan(subscription.id, 'plan_team_monthly', world.now);
+
+      expect(second.subscription.planId).toBe('plan_team_monthly');
+      expect(second.invoice).toMatchObject({ kind: 'proration', status: 'paid', periodStart: first.invoice!.periodStart });
+      expect(second.invoice!.id).not.toBe(first.invoice!.id);
+      expect(second.invoice!.total).toBe(first.invoice!.total);
+      await expectBalancedLedger(world.engine);
+    });
+
     it('switches plans during a trial without moving money', async () => {
       const world = await BillingWorld.create(store(), at('2026-02-01T00:00:00Z'));
       const { customer } = await world.customer('Juniper Events', 'RUB', 'succeeds');

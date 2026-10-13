@@ -25,7 +25,7 @@ export interface Invoice {
   kind: InvoiceKind;
   status: InvoiceStatus;
   currency: Currency;
-  /** Together with subscriptionId and kind this is unique: a period is never billed twice. */
+  /** Unique per subscription for cycle invoices, so a period is never billed twice; a proration starts at the change. */
   periodStart: Date;
   periodEnd: Date;
   lines: InvoiceLine[];
