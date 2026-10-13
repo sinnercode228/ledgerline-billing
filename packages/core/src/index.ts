@@ -28,4 +28,12 @@ export type { PlanChangeEffect, PlanChangePreview } from './engine/plan-change.j
 export type { ClockAdvance } from './engine/test-clock.js';
 export type { ReceiveResult } from './engine/webhooks.js';
 export { finalizeInvoice, draftInvoice } from './engine/invoicing.js';
-export { seedDemo, type DemoSeedOptions, type DemoSeedSummary } from './demo/seed.js';
+export {
+  DEFAULT_DEMO_STORY,
+  seedDemo,
+  type DemoAction,
+  type DemoCustomer,
+  type DemoSeedOptions,
+  type DemoSeedSummary,
+  type DemoStory,
+} from './demo/seed.js';

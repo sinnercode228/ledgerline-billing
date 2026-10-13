@@ -6,10 +6,25 @@ import { PLAN_CATALOG } from '../plans.js';
 
 type Card = keyof typeof PAYRAIL_TEST_CARDS;
 
-interface DemoCustomer {
+export interface DemoCustomer {
   name: string;
   currency: Currency;
+  /** The card attached when the customer subscribes. */
   card: Card;
+}
+
+export type DemoAction =
+  | { kind: 'subscribe'; customer: string; planId: string }
+  | { kind: 'change_plan'; customer: string; planId: string }
+  | { kind: 'cancel'; customer: string }
+  | { kind: 'new_card'; customer: string; card: Card }
+  | { kind: 'refund_first_invoice'; customer: string };
+
+/** Who the customers are and what they do on which day; the engine produces everything else (renewals, dunning, credits). */
+export interface DemoStory {
+  customers: Readonly<Record<string, DemoCustomer>>;
+  /** Day numbers count from the first seeded day. */
+  timeline: ReadonlyArray<readonly [number, DemoAction]>;
 }
 
 /** Made-up SaaS customers. */
@@ -31,15 +46,7 @@ const CUSTOMERS = {
 
 type CustomerKey = keyof typeof CUSTOMERS;
 
-type Action =
-  | { kind: 'subscribe'; customer: CustomerKey; planId: string }
-  | { kind: 'change_plan'; customer: CustomerKey; planId: string }
-  | { kind: 'cancel'; customer: CustomerKey }
-  | { kind: 'new_card'; customer: CustomerKey; card: Card }
-  | { kind: 'refund_first_invoice'; customer: CustomerKey };
-
-/** What happens on which day; the engine produces everything else (renewals, dunning, credits). */
-const TIMELINE: ReadonlyArray<readonly [number, Action]> = [
+const TIMELINE: ReadonlyArray<readonly [number, DemoAction & { customer: CustomerKey }]> = [
   [0, { kind: 'subscribe', customer: 'borealis', planId: 'plan_team_monthly' }],
   [0, { kind: 'subscribe', customer: 'kettle', planId: 'plan_business_yearly' }],
   [3, { kind: 'subscribe', customer: 'pinegrove', planId: 'plan_starter_monthly' }],
@@ -60,12 +67,16 @@ const TIMELINE: ReadonlyArray<readonly [number, Action]> = [
   [117, { kind: 'subscribe', customer: 'dune', planId: 'plan_business_monthly' }],
 ];
 
+/** Four months of a small SaaS: the server's seed command plays it. */
+export const DEFAULT_DEMO_STORY: DemoStory = { customers: CUSTOMERS, timeline: TIMELINE };
+
 export interface DemoSeedOptions {
   engine: BillingEngine;
   provider: FakePayrail;
   /** The seeded history ends here; the test clock is left at this instant. */
   end: Date;
   days?: number;
+  story?: DemoStory;
   /** Called as each simulated day starts, before its due work runs. */
   onDay?: (at: Date) => void;
 }
@@ -83,6 +94,7 @@ export interface DemoSeedSummary {
 export async function seedDemo(options: DemoSeedOptions): Promise<DemoSeedSummary> {
   const { engine, provider, end } = options;
   const days = options.days ?? 120;
+  const { customers, timeline } = options.story ?? DEFAULT_DEMO_STORY;
   if ((await engine.listCustomers({ limit: 1 })).length > 0) {
     throw new Error('the store already has customers; seed an empty database');
   }
@@ -90,8 +102,8 @@ export async function seedDemo(options: DemoSeedOptions): Promise<DemoSeedSummar
   await engine.syncPlans(PLAN_CATALOG);
   await engine.setClock(from);
 
-  const customerIds = new Map<CustomerKey, string>();
-  const subscriptionIds = new Map<CustomerKey, string>();
+  const customerIds = new Map<string, string>();
+  const subscriptionIds = new Map<string, string>();
 
   const deliverEvents = async (at: Date) => {
     for (const event of provider.drainEvents()) await engine.receiveProviderEvent(event, at);
@@ -100,11 +112,12 @@ export async function seedDemo(options: DemoSeedOptions): Promise<DemoSeedSummar
   const attachCard = (customerId: string, card: Card, at: Date) =>
     engine.attachPaymentMethod(customerId, { number: PAYRAIL_TEST_CARDS[card], expMonth: 12, expYear: end.getUTCFullYear() + 3 }, at);
 
-  const run = async (action: Action, at: Date) => {
+  const run = async (action: DemoAction, at: Date) => {
     const subscriptionId = subscriptionIds.get(action.customer);
     switch (action.kind) {
       case 'subscribe': {
-        const profile: DemoCustomer = CUSTOMERS[action.customer];
+        const profile = customers[action.customer];
+        if (!profile) throw new Error(`the demo story has no customer "${action.customer}"`);
         const slug = profile.name.toLowerCase().replace(/[^a-z]+/g, '-').replace(/-$/, '');
         const customer = await engine.createCustomer({ name: profile.name, email: `billing@${slug}.example.com`, currency: profile.currency }, at);
         await attachCard(customer.id, profile.card, at);
@@ -135,7 +148,7 @@ export async function seedDemo(options: DemoSeedOptions): Promise<DemoSeedSummar
 
   let at = from;
   for (let day = 0; ; day++) {
-    for (const [when, action] of TIMELINE) {
+    for (const [when, action] of timeline) {
       if (when === day) await run(action, at);
     }
     await deliverEvents(at);

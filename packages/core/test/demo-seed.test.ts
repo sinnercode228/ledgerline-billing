@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { seedDemo } from '../src/demo/seed.js';
+import { seedDemo, type DemoStory } from '../src/demo/seed.js';
 import { BillingEngine } from '../src/engine/billing-engine.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import { FakePayrail } from '../src/payrail/fake-payrail.js';
@@ -28,6 +28,27 @@ describe('demo seed', () => {
     expect((await engine.trialBalance()).balanced).toBe(true);
     expect((await engine.listWebhookEvents()).length).toBeGreaterThan(0);
   }, 60_000);
+
+  it('plays a story it is given instead of the default one', async () => {
+    const story: DemoStory = {
+      customers: {
+        alder: { name: 'Alder & Finch', currency: 'EUR', card: 'succeeds' },
+        riverbend: { name: 'Riverbend Logistics', currency: 'RUB', card: 'declined' },
+      },
+      timeline: [
+        [0, { kind: 'subscribe', customer: 'alder', planId: 'plan_team_monthly' }],
+        [8, { kind: 'subscribe', customer: 'riverbend', planId: 'plan_business_monthly' }],
+      ],
+    };
+    const provider = new FakePayrail();
+    const engine = new BillingEngine({ store: new MemoryStore(), provider });
+    const summary = await seedDemo({ engine, provider, end: new Date('2026-10-13T12:00:00Z'), days: 10, story });
+
+    expect(summary.customers).toBe(2);
+    const names = new Map((await engine.listCustomers()).map((c) => [c.id, c.name]));
+    const statuses = (await engine.listSubscriptions()).map((s) => `${names.get(s.customerId)}: ${s.status}`).sort();
+    expect(statuses).toEqual(['Alder & Finch: trialing', 'Riverbend Logistics: past_due']);
+  });
 
   it('refuses to seed a store that already has customers', async () => {
     const provider = new FakePayrail();
