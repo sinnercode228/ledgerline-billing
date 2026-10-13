@@ -394,7 +394,9 @@
   padding: 24px var(--gutter) 48px;
 }
 
-.content > * + * {
+/* A page that loads as a whole keeps the same rhythm inside its loaded block. */
+.content > * + *,
+.content > .loaded > * + * {
   margin-top: 16px;
 }
 

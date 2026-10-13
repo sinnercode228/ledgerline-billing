@@ -39,7 +39,7 @@ export function Loaded<T>({ resource, rows, children }: { resource: Resource<T>;
     return resource.error ? <ErrorNotice error={resource.error} onRetry={resource.reload} /> : <Skeleton rows={rows} />;
   }
   return (
-    <div className={resource.loading ? 'is-refreshing' : undefined} aria-busy={resource.loading || undefined}>
+    <div className={resource.loading ? 'loaded is-refreshing' : 'loaded'} aria-busy={resource.loading || undefined}>
       {resource.error && <ErrorNotice error={resource.error} onRetry={resource.reload} />}
       {children(resource.data)}
     </div>
