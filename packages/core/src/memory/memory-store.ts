@@ -9,7 +9,9 @@ import type {
   IdempotencyRecord,
   InvoiceFilter,
   JournalFilter,
+  Lock,
   Page,
+  RunOptions,
   Store,
   StoreTx,
   SubscriptionFilter,
@@ -128,8 +130,8 @@ export class MemoryStore implements Store {
     return store;
   }
 
-  run<T>(work: (tx: StoreTx) => Promise<T>): Promise<T> {
-    const result = this.queue.then(() => this.execute(work));
+  run<T>(work: (tx: StoreTx) => Promise<T>, options: RunOptions = {}): Promise<T> {
+    const result = this.queue.then(() => this.execute(work, options));
     this.queue = result.catch(() => undefined);
     return result;
   }
@@ -157,10 +159,11 @@ export class MemoryStore implements Store {
     return result;
   }
 
-  private async execute<T>(work: (tx: StoreTx) => Promise<T>): Promise<T> {
+  private async execute<T>(work: (tx: StoreTx) => Promise<T>, { readOnly = false }: RunOptions): Promise<T> {
     const draft = copy(this.state);
-    const tx = new MemoryTx(draft, this.journal);
+    const tx = new MemoryTx(draft, this.journal, readOnly);
     const result = await work(tx);
+    if (readOnly) return result;
     tx.checkDeferredConstraints();
     this.state = draft;
     this.journal.push(...tx.appended);
@@ -174,6 +177,7 @@ class MemoryTx implements StoreTx {
   constructor(
     private readonly s: MemoryState,
     private readonly committedJournal: readonly JournalTransaction[],
+    private readonly readOnly: boolean,
   ) {}
 
   private get journal(): JournalTransaction[] {
@@ -184,14 +188,25 @@ class MemoryTx implements StoreTx {
     for (const transaction of this.appended) assertTransactionBalances(transaction);
   }
 
+  private assertWritable(): void {
+    if (this.readOnly) throw new Error('cannot write in a read-only transaction');
+  }
+
+  private assertLockable(lock: Lock | undefined): void {
+    if (lock && this.readOnly) throw new Error('cannot lock rows in a read-only transaction');
+  }
+
   async insertCustomer(customer: Customer) {
+    this.assertWritable();
     if (this.s.customers.has(customer.id)) throw new BillingError('duplicate_key', `customer ${customer.id} exists`);
     this.s.customers.set(customer.id, copy(customer));
   }
-  async getCustomer(id: string) {
+  async getCustomer(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.customers.get(id) ?? null);
   }
   async updateCustomer(customer: Customer) {
+    this.assertWritable();
     this.requireRow(this.s.customers, customer.id);
     if (customer.defaultPaymentMethodId !== null) {
       const method = this.s.paymentMethods.get(customer.defaultPaymentMethodId);
@@ -206,6 +221,7 @@ class MemoryTx implements StoreTx {
   }
 
   async insertPaymentMethod(method: PaymentMethod) {
+    this.assertWritable();
     this.requireRow(this.s.customers, method.customerId);
     if ([...this.s.paymentMethods.values()].some((m) => m.providerToken === method.providerToken)) {
       throw new BillingError('duplicate_key', 'payment method token already attached');
@@ -220,6 +236,7 @@ class MemoryTx implements StoreTx {
   }
 
   async upsertPlan(plan: Plan) {
+    this.assertWritable();
     this.s.plans.set(plan.id, copy(plan));
   }
   async getPlan(id: string) {
@@ -230,14 +247,17 @@ class MemoryTx implements StoreTx {
   }
 
   async insertSubscription(subscription: Subscription) {
+    this.assertWritable();
     this.requireRow(this.s.customers, subscription.customerId);
     this.requireRow(this.s.plans, subscription.planId);
     this.s.subscriptions.set(subscription.id, copy(subscription));
   }
-  async getSubscription(id: string) {
+  async getSubscription(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.subscriptions.get(id) ?? null);
   }
   async updateSubscription(subscription: Subscription) {
+    this.assertWritable();
     this.requireRow(this.s.subscriptions, subscription.id);
     this.requireRow(this.s.plans, subscription.planId);
     this.s.subscriptions.set(subscription.id, copy(subscription));
@@ -249,6 +269,7 @@ class MemoryTx implements StoreTx {
     return copy(page(rows.sort(newestFirst), filter));
   }
   async claimDueSubscription(now: Date, skip: readonly string[]) {
+    this.assertLockable('for_update');
     const due = [...this.s.subscriptions.values()]
       .filter((s) => !skip.includes(s.id))
       .filter((s) =>
@@ -263,6 +284,7 @@ class MemoryTx implements StoreTx {
   }
 
   async insertInvoice(invoice: Invoice) {
+    this.assertWritable();
     this.requireRow(this.s.subscriptions, invoice.subscriptionId);
     const clash =
       invoice.kind === 'cycle' &&
@@ -274,10 +296,12 @@ class MemoryTx implements StoreTx {
     }
     this.s.invoices.set(invoice.id, copy(invoice));
   }
-  async getInvoice(id: string) {
+  async getInvoice(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.invoices.get(id) ?? null);
   }
   async updateInvoice(invoice: Invoice) {
+    this.assertWritable();
     const current = this.requireRow(this.s.invoices, invoice.id);
     if (invoice.status !== current.status && !isInvoiceTransitionAllowed(current.status, invoice.status)) {
       throw new BillingError('illegal_invoice_transition', `invoice ${invoice.id} cannot move ${current.status} -> ${invoice.status}`, {
@@ -300,17 +324,20 @@ class MemoryTx implements StoreTx {
     return copy(page(rows.sort(newestFirst), filter));
   }
   async nextInvoiceSequence(year: number) {
+    this.assertWritable();
     const next = (this.s.invoiceCounters.get(year) ?? 0) + 1;
     this.s.invoiceCounters.set(year, next);
     return next;
   }
 
   async insertPayment(payment: Payment) {
+    this.assertWritable();
     this.requireRow(this.s.invoices, payment.invoiceId);
     this.checkPaymentUniqueness(payment);
     this.s.payments.set(payment.id, copy(payment));
   }
-  async getPayment(id: string) {
+  async getPayment(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.payments.get(id) ?? null);
   }
   async findPaymentByProviderId(providerPaymentId: string) {
@@ -322,12 +349,20 @@ class MemoryTx implements StoreTx {
   async listPaymentsForInvoice(invoiceId: string) {
     return copy([...this.s.payments.values()].filter((p) => p.invoiceId === invoiceId).sort((a, b) => a.attempt - b.attempt));
   }
+  async listPayments(p: Page) {
+    const rows = [...this.s.payments.values()].sort((a, b) =>
+      a.invoiceId === b.invoiceId ? a.attempt - b.attempt : a.invoiceId < b.invoiceId ? -1 : 1,
+    );
+    return copy(page(rows, p));
+  }
   async updatePayment(payment: Payment) {
+    this.assertWritable();
     this.requireRow(this.s.payments, payment.id);
     this.checkPaymentUniqueness(payment);
     this.s.payments.set(payment.id, copy(payment));
   }
   async claimStalePendingPayment(cutoff: Date, skip: readonly string[]) {
+    this.assertLockable('for_update');
     const stale = [...this.s.payments.values()]
       .filter((p) => p.status === 'pending' && p.lastAttemptAt <= cutoff && !skip.includes(p.id))
       .sort((a, b) => a.lastAttemptAt.getTime() - b.lastAttemptAt.getTime());
@@ -351,6 +386,7 @@ class MemoryTx implements StoreTx {
   }
 
   async ensureLedgerAccounts(accounts: readonly LedgerAccount[]) {
+    this.assertWritable();
     for (const account of accounts) {
       const existing = this.s.accounts.get(account.id);
       if (existing && existing.currency !== account.currency) {
@@ -360,6 +396,7 @@ class MemoryTx implements StoreTx {
     }
   }
   async insertJournalTransaction(transaction: JournalTransaction) {
+    this.assertWritable();
     for (const entry of transaction.entries) {
       const account = this.requireRow(this.s.accounts, entry.accountId);
       if (account.currency !== transaction.currency) {
@@ -418,11 +455,13 @@ class MemoryTx implements StoreTx {
   }
 
   async insertWebhookEvent(event: WebhookEventRecord) {
+    this.assertWritable();
     if (this.s.webhookEvents.has(event.providerEventId)) return false;
     this.s.webhookEvents.set(event.providerEventId, copy(event));
     return true;
   }
   async updateWebhookEvent(event: WebhookEventRecord) {
+    this.assertWritable();
     this.requireRow(this.s.webhookEvents, event.providerEventId);
     this.s.webhookEvents.set(event.providerEventId, copy(event));
   }
@@ -437,6 +476,7 @@ class MemoryTx implements StoreTx {
     return copy(this.s.idempotency.get(idempotencyId(scope, key)) ?? null);
   }
   async saveIdempotencyKey(record: IdempotencyRecord) {
+    this.assertWritable();
     const id = idempotencyId(record.scope, record.key);
     if (this.s.idempotency.has(id)) throw new BillingError('duplicate_key', 'idempotency key already used');
     this.s.idempotency.set(id, copy(record));
@@ -446,6 +486,7 @@ class MemoryTx implements StoreTx {
     return copy(this.s.clock);
   }
   async setClock(now: Date) {
+    this.assertWritable();
     this.s.clock = copy(now);
   }
 

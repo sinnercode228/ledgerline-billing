@@ -42,7 +42,7 @@ function watchWrittenOffInvoices(store: Store): { store: Store; problems: string
         return typeof value === 'function' ? value.bind(target) : value;
       },
     });
-  return { store: { run: (work) => store.run((tx) => work(watch(tx))) }, problems };
+  return { store: { run: (work, options) => store.run((tx) => work(watch(tx)), options) }, problems };
 }
 
 /**

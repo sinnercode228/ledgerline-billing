@@ -84,7 +84,30 @@ The same migration, [`001_schema.sql`](server/migrations/001_schema.sql) and the
 - Invoice numbers come from a per-year counter row: `INSERT ... ON CONFLICT (year) DO UPDATE SET last_number = invoice_counters.last_number + 1 RETURNING last_number`. The row stays locked until COMMIT, so a concurrent finalization waits and a rollback gives the number back. The scenario "numbers 20 concurrent finalizations without gaps, even when others roll back" runs on both stores.
 - One cycle invoice per subscription and period start, a partial unique index since migration 003. Proration invoices are left out of it, because two plan changes can share an instant on the test clock.
 
-`MemoryStore` enforces the same rules at the same moments. It runs every transaction on a `structuredClone` of its state, checks the journal transactions added during it before swapping the copy in, and drops the copy on any error ([`memory-store.ts`](packages/core/src/memory/memory-store.ts)). On top of the fixed scenarios, [`random-walk.ts`](packages/core/src/testing/scenarios/random-walk.ts) runs 240 simulated days on two seeds: plan changes, card swaps, refunds, webhook-only answers, dropped answers, late, repeated and reordered webhooks, two workers at once. After every step [`invariants.ts`](packages/core/src/testing/invariants.ts) compares the documents with the books: the trial balance, each receivable against what the customer's open invoices owe, clearing against payments less refunds, revenue against billed less credits and refunds, bad debt against what uncollectible invoices owe, and every Payrail charge against a local payment. A day on which due work lists a subscription in `errors` also fails the walk ([`world.ts`](packages/core/src/testing/world.ts)), so a status change that a store refuses inside due work does not go unnoticed.
+`MemoryStore` enforces the same rules at the same moments. It runs every transaction on a `structuredClone` of its state, checks the journal transactions added during it before swapping the copy in, and drops the copy on any error ([`memory-store.ts`](packages/core/src/memory/memory-store.ts)). On top of the fixed scenarios, [`random-walk.ts`](packages/core/src/testing/scenarios/random-walk.ts) runs 240 simulated days on two seeds: plan changes, card swaps, refunds, webhook-only answers, dropped answers, late, repeated and reordered webhooks, two workers at once. After every step the checks in [`reconcile.ts`](packages/core/src/reconcile.ts) compare the documents with the books: the trial balance, each receivable against what the customer's open invoices owe, clearing against payments less refunds, revenue against billed less credits and refunds, bad debt against what uncollectible invoices owe; [`invariants.ts`](packages/core/src/testing/invariants.ts) adds every Payrail charge against a local payment. A day on which due work lists a subscription in `errors` also fails the walk ([`world.ts`](packages/core/src/testing/world.ts)), so a status change that a store refuses inside due work does not go unnoticed.
+
+## Reconciling a running database
+
+The same checks run against a live database. `npm run reconcile` reads the books and the documents from `LEDGERLINE_DATABASE_URL` and prints every violation on a line of its own, the rule's name first ([`server/src/reconcile.ts`](server/src/reconcile.ts)). On the 120-day seed:
+
+```
+$ npm run --silent reconcile
+no violations in 13 customers, 13 subscriptions, 31 invoices, 37 payments and 31 accounts
+```
+
+Then I inserted by hand, in `psql`, a second write-off of the uncollectible invoice of Tundra Freight Ops, balanced on its own, which is what the retry loop wrote before `b8aabf0`. The trial balance is still zero; the command names both accounts that no longer agree with the invoices:
+
+```
+receivable: customer Tundra Freight Ops: receivable -99000, open invoices owe 0
+bad_debt: RUB bad debt 198000, uncollectible invoices owe 99000
+2 violations in 13 customers, 13 subscriptions, 31 invoices, 37 payments and 31 accounts
+```
+
+The exit code is 1 when there is a violation and 0 when there is none; a configuration or connection error also exits 1, with the message on stderr. The command needs no variable other than `LEDGERLINE_DATABASE_URL`. With the API running, `GET /v1/reconcile` returns the same report as JSON behind the API key; the rule names are listed in [`docs/api.md`](docs/api.md#ledger-and-metrics).
+
+What it reads: seven queries in one transaction opened as `REPEATABLE READ READ ONLY` (`store.run(work, { readOnly: true })`): every customer, subscription, invoice with its lines, payment and ledger account, the account balances summed by PostgreSQL, and of the journal only the `refund` and `downgrade_credit` transactions. Under READ COMMITTED each query sees what was committed before it started, so a payment the worker commits between two of the queries could appear in one and not in the other and be reported as a violation that never existed. In one snapshot that cannot happen, and PostgreSQL refuses any write in that transaction. The rows are then compared in memory, grouped in maps, so the work grows linearly with the data: on the 120-day seed the comparison takes about 10 ms, on a 730-day seed (195 invoices, 202 payments, 393 journal transactions) about 20 ms, and the command spends most of its 0.2 s starting Node. That is the size it is built for; with millions of invoices the sums would have to move into SQL.
+
+One check stays in the tests: every Payrail charge against a local payment. `FakePayrail` keeps its charges in the memory of the process that made them, so only a test that holds the provider can compare them.
 
 ## One engine on PostgreSQL and in the browser
 
@@ -112,13 +135,13 @@ flowchart TB
     PROV --> FAKE["FakePayrail, in-process; relay.ts posts its signed events to the webhook route"]
 ```
 
-The engine never reads the wall clock. Every method takes `now`, and the server passes the system time or, with the test clock on, the time stored in the database ([`clock.ts`](server/src/clock.ts)). It reaches storage only through the `Store` port ([`ports/store.ts`](packages/core/src/ports/store.ts)): `run(work)` is one transaction, and the 40 methods of `StoreTx` are what the engine may do inside it. Two of them make several workers safe on PostgreSQL: `claimDueSubscription` takes one due subscription with `FOR UPDATE OF s SKIP LOCKED`, so each period is billed once however many workers run, and `lockIdempotencyKey` takes `pg_advisory_xact_lock`, which also covers a key that has no row yet. Every caller locks in one order, subscription, customer, invoice, payment, as the port's comment requires. [`pg-store.ts`](server/src/store/pg-store.ts) is plain SQL through `pg`, with a typed mapper per row that converts `bigint` columns safely.
+The engine never reads the wall clock. Every method takes `now`, and the server passes the system time or, with the test clock on, the time stored in the database ([`clock.ts`](server/src/clock.ts)). It reaches storage only through the `Store` port ([`ports/store.ts`](packages/core/src/ports/store.ts)): `run(work)` is one transaction, `run(work, { readOnly: true })` one that only reads, from a single snapshot, and the 41 methods of `StoreTx` are what the engine may do inside it. Two of them make several workers safe on PostgreSQL: `claimDueSubscription` takes one due subscription with `FOR UPDATE OF s SKIP LOCKED`, so each period is billed once however many workers run, and `lockIdempotencyKey` takes `pg_advisory_xact_lock`, which also covers a key that has no row yet. Every caller locks in one order, subscription, customer, invoice, payment, as the port's comment requires. [`pg-store.ts`](server/src/store/pg-store.ts) is plain SQL through `pg`, with a typed mapper per row that converts `bigint` columns safely.
 
 `packages/core` has no Node-only imports. ESLint's `no-restricted-imports` rejects `node:*` and the Node built-ins there, its tsconfig has `types: []` and the DOM library, and the webhook signature uses Web Crypto. The dashboard talks to a `LedgerlineApi` interface ([`client.ts`](web/src/api/client.ts)) with two implementations: [`http-client.ts`](web/src/api/http-client.ts) for a server, and [`demo-api.ts`](web/src/demo/demo-api.ts), which calls the engine on a `MemoryStore` with `FakePayrail` and builds its answers with the same representation functions as the server routes. The demo is loaded with a dynamic `import()`, so the build for a server has no demo chunk. The demo world uses a seeded id generator and a seeded random source, so everyone who opens it on the same day gets the same world, id for id; after every change it saves `MemoryStore.dump()` to localStorage ([`world.ts`](web/src/demo/world.ts)).
 
 More from the demo: [the overview after "+1 week"](docs/screenshots/overview-after-a-week.png), [the webhook log](docs/screenshots/webhooks.png), [a past-due subscription on a phone, in Russian](docs/screenshots/phone-past-due-ru.png).
 
-What every store must do is one suite of 37 scenarios in [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). The core runs it on `MemoryStore`; the server runs it on `PgStore` with a freshly migrated schema per test ([`database.ts`](server/test/helpers/database.ts)).
+What every store must do is one suite of 38 scenarios in [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). The core runs it on `MemoryStore`; the server runs it on `PgStore` with a freshly migrated schema per test ([`database.ts`](server/test/helpers/database.ts)).
 
 ## Payrail webhooks: signatures, duplicates, late answers
 
@@ -173,13 +196,14 @@ npm run seed            # 120 days of history for 13 customers on the test clock
 npm run serve           # API on http://localhost:3000
 npm run worker          # second terminal: due work every 60 s
 npm run dev:web         # third terminal: dashboard on http://localhost:5173, asks for the API key once
+npm run reconcile       # any time: the books against invoices and payments, exit code 1 on a mismatch
 ```
 
 `npm run seed -- --days 60` seeds another length (1 to 730 days). The npm scripts read `.env` through `node --env-file-if-exists`.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `LEDGERLINE_DATABASE_URL` | none, required | PostgreSQL connection string |
+| `LEDGERLINE_DATABASE_URL` | none, required | PostgreSQL connection string; `migrate`, `seed` and `reconcile` need nothing else |
 | `LEDGERLINE_API_KEY` | none, required | bearer key for `/v1`; at least 32 characters, refused if it looks like a placeholder |
 | `LEDGERLINE_WEBHOOK_SECRET` | none, required | comma-separated during rotation, `new,old`; each at least 16 characters; the first signs the relay's events |
 | `LEDGERLINE_DEV` | `0` | `1` allows missing or weak keys for local work |
@@ -201,7 +225,7 @@ LEDGERLINE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ledgerl
 npm run lint && npm run typecheck
 ```
 
-241 Vitest tests in 38 files, counted from Vitest's JSON reporter: 106 in `packages/core` (15 files), 86 in `server` (9 files) and 49 in `web` (14 files). Of those, 74 are the 37 shared scenarios, once on each store, the two random walks included. fast-check property tests cover proration (a full period gives the price, a credit never exceeds what was paid over any sequence of plan changes, lines sum to the total), `mulDivFloor` against the exact rational value, the calendar and the trial balance. Seven tests in [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) write rows by hand to check the triggers and keys above. The HTTP tests go through Fastify's `inject` on both stores: auth, validation, `Idempotency-Key`, signatures that are good, expired, tampered or made with the previous secret, the 400-day clock limit and CORS. The web tests run in jsdom: the demo world, the plan change dialog, the clock bar, persistence, i18n and formatting. Without `LEDGERLINE_TEST_DATABASE_URL`, core and server run 136 tests and skip 44.
+248 Vitest tests in 40 files, counted from Vitest's JSON reporter: 109 in `packages/core` (16 files), 90 in `server` (10 files) and 49 in `web` (14 files). Of those, 76 are the 38 shared scenarios, once on each store, the two random walks included. fast-check property tests cover proration (a full period gives the price, a credit never exceeds what was paid over any sequence of plan changes, lines sum to the total), `mulDivFloor` against the exact rational value, the calendar and the trial balance. Seven tests in [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) write rows by hand to check the triggers and keys above. Three in [`reconcile.test.ts`](server/test/reconcile.test.ts) run the reconcile command and `GET /v1/reconcile` on a seeded schema, clean and with a second write-off inserted by hand, and check that a commit in the middle of the read is not half seen. The HTTP tests go through Fastify's `inject` on both stores: auth, validation, `Idempotency-Key`, signatures that are good, expired, tampered or made with the previous secret, the 400-day clock limit and CORS. The web tests run in jsdom: the demo world, the plan change dialog, the clock bar, persistence, i18n and formatting. Without `LEDGERLINE_TEST_DATABASE_URL`, core and server run 139 tests and skip 48.
 
 [`ci.yml`](.github/workflows/ci.yml) runs lint, `tsc -b`, the core and server tests against a `postgres:16-alpine` service and the server build in one job, and the dashboard's lint, typecheck, tests and both builds, for a server and for the demo, in another.
 

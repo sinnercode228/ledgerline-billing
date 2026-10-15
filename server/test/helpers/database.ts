@@ -17,6 +17,8 @@ export interface TestDatabase {
   pool: pg.Pool;
   store: PgStore;
   schema: string;
+  /** A connection string that selects this schema, for code that opens its own pool, as the commands do. */
+  url: string;
   close(): Promise<void>;
 }
 
@@ -29,10 +31,13 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   await admin.query(`CREATE SCHEMA ${schema}`);
   const pool = createPool(url, { schema, max: 12 });
   await runMigrations(pool);
+  const schemaUrl = new URL(url);
+  schemaUrl.searchParams.set('options', `-c search_path=${schema}`);
   return {
     pool,
     store: new PgStore(pool),
     schema,
+    url: schemaUrl.toString(),
     async close() {
       await pool.end();
       await admin.query(`DROP SCHEMA ${schema} CASCADE`);

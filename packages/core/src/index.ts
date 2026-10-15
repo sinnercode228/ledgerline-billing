@@ -11,6 +11,7 @@ export * from './money.js';
 export * from './payments.js';
 export * from './plans.js';
 export * from './proration.js';
+export * from './reconcile.js';
 export * from './subscription.js';
 export * from './webhook-events.js';
 export * from './ports/provider.js';

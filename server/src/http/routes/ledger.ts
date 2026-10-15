@@ -35,6 +35,8 @@ export function ledgerRoutes(app: FastifyInstance, { engine, clock }: ApiContext
 
   app.get('/ledger/trial-balance', () => engine.trialBalance());
 
+  app.get('/reconcile', () => engine.reconcile());
+
   app.get('/metrics', async (request) => {
     const { days } = parse(z.object({ days: z.coerce.number().int().min(1).max(366).default(30) }), request.query);
     return engine.metrics(await clock.now(), { revenueDays: days });
