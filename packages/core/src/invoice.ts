@@ -2,7 +2,8 @@ import type { BillingInterval } from './calendar.js';
 import { BillingError } from './errors.js';
 import { assertNonNegativeMinorUnits, sumMinor, type Currency } from './money.js';
 
-export type InvoiceStatus = 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';
+export const INVOICE_STATUSES = ['draft', 'open', 'paid', 'void', 'uncollectible'] as const;
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 export type InvoiceKind = 'cycle' | 'proration';
 export type InvoiceLineKind = 'plan' | 'proration_credit' | 'proration_charge';
 
@@ -55,8 +56,12 @@ const TRANSITIONS: Record<InvoiceStatus, readonly InvoiceStatus[]> = {
   uncollectible: ['paid'],
 };
 
+export function isInvoiceTransitionAllowed(from: InvoiceStatus, to: InvoiceStatus): boolean {
+  return TRANSITIONS[from].includes(to);
+}
+
 export function assertInvoiceTransition(from: InvoiceStatus, to: InvoiceStatus): void {
-  if (!TRANSITIONS[from].includes(to)) {
+  if (!isInvoiceTransitionAllowed(from, to)) {
     throw new BillingError('invalid_transition', `invoice cannot move ${from} -> ${to}`, { from, to });
   }
 }

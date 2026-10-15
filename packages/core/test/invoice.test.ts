@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { assertInvoiceTransition, cycleLines, formatInvoiceNumber, invoiceAmounts } from '../src/invoice.js';
+import { statusForBillingError } from '../src/api/errors.js';
+import {
+  assertInvoiceTransition,
+  cycleLines,
+  formatInvoiceNumber,
+  INVOICE_STATUSES,
+  invoiceAmounts,
+  isInvoiceTransitionAllowed,
+} from '../src/invoice.js';
 
 describe('invoices', () => {
   it('formats gapless numbers per year', () => {
@@ -18,6 +26,19 @@ describe('invoices', () => {
     expect(() => assertInvoiceTransition('draft', 'paid')).toThrow(/draft -> paid/);
     expect(() => assertInvoiceTransition('paid', 'open')).toThrow();
     expect(() => assertInvoiceTransition('void', 'paid')).toThrow();
+  });
+
+  it('has five status changes, the only ones a store saves besides keeping the status', () => {
+    const moves = INVOICE_STATUSES.flatMap((from) =>
+      INVOICE_STATUSES.filter((to) => isInvoiceTransitionAllowed(from, to)).map((to) => `${from} -> ${to}`),
+    );
+    expect(moves).toEqual(['draft -> open', 'open -> paid', 'open -> void', 'open -> uncollectible', 'uncollectible -> paid']);
+  });
+
+  it('answers a status change that a store refuses as an internal error', () => {
+    // The engine checks every change it makes first, so a refusal from the store means it saved a stale copy.
+    expect(statusForBillingError('illegal_invoice_transition')).toBe(500);
+    expect(statusForBillingError('invalid_transition')).toBe(409);
   });
 
   it('applies customer credit up to the total and never below zero', () => {

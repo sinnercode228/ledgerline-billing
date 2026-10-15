@@ -1,6 +1,6 @@
 import type { Customer, PaymentMethod } from '../customer.js';
 import { BillingError } from '../errors.js';
-import type { Invoice } from '../invoice.js';
+import { isInvoiceTransitionAllowed, type Invoice } from '../invoice.js';
 import { balancesFromEntries, type AccountBalance, type JournalTransaction, type LedgerAccount } from '../ledger.js';
 import type { Payment } from '../payments.js';
 import type { Plan } from '../plans.js';
@@ -279,6 +279,12 @@ class MemoryTx implements StoreTx {
   }
   async updateInvoice(invoice: Invoice) {
     const current = this.requireRow(this.s.invoices, invoice.id);
+    if (invoice.status !== current.status && !isInvoiceTransitionAllowed(current.status, invoice.status)) {
+      throw new BillingError('illegal_invoice_transition', `invoice ${invoice.id} cannot move ${current.status} -> ${invoice.status}`, {
+        from: current.status,
+        to: invoice.status,
+      });
+    }
     if (invoice.number !== null && [...this.s.invoices.values()].some((i) => i.id !== invoice.id && i.number === invoice.number)) {
       throw new BillingError('duplicate_key', `invoice number ${invoice.number} is taken`);
     }

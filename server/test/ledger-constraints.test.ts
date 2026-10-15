@@ -101,8 +101,8 @@ describeWithDatabase('ledger constraints in PostgreSQL', () => {
     expect(rows[0]).toEqual({ n: 2 });
   });
 
-  it('never lets a succeeded payment go back to failed', async () => {
-    await db.pool.query(`
+  const insertOpenInvoice = () =>
+    db.pool.query(`
       INSERT INTO plans (id, name, interval, trial_days) VALUES ('plan_x', 'X', 'month', 0);
       INSERT INTO customers (id, name, email, currency, created_at) VALUES ('cus_x', 'X', 'x@example.com', 'RUB', now());
       INSERT INTO subscriptions (id, customer_id, plan_id, currency, status, billing_anchor, paid_cycles, current_period_start,
@@ -110,12 +110,30 @@ describeWithDatabase('ledger constraints in PostgreSQL', () => {
         VALUES ('sub_x', 'cus_x', 'plan_x', 'RUB', 'active', now(), 1, now(), now() + interval '1 month', false, now(), now());
       INSERT INTO invoices (id, number, customer_id, subscription_id, kind, status, currency, period_start, period_end, total,
         credit_applied, amount_due, amount_paid, amount_refunded, created_at)
-        VALUES ('in_x', 'LL-2026-000001', 'cus_x', 'sub_x', 'cycle', 'open', 'RUB', now(), now() + interval '1 month', 0, 0, 0, 0, 0, now());
+        VALUES ('in_x', 'LL-2026-000001', 'cus_x', 'sub_x', 'cycle', 'open', 'RUB', now(), now() + interval '1 month', 0, 0, 0, 0, 0, now());`);
+
+  it('never lets a succeeded payment go back to failed', async () => {
+    await insertOpenInvoice();
+    await db.pool.query(`
       INSERT INTO payments (id, invoice_id, customer_id, subscription_id, attempt, trigger, idempotency_key, amount, currency, status,
         created_at, updated_at, last_attempt_at)
         VALUES ('pay_x', 'in_x', 'cus_x', 'sub_x', 1, 'initial', 'k1', 100, 'RUB', 'succeeded', now(), now(), now());`);
     await expect(db.pool.query(`UPDATE payments SET status = 'failed' WHERE id = 'pay_x'`)).rejects.toMatchObject({
       message: expect.stringMatching(/succeeded/),
     });
+  });
+
+  it('never lets a written-off invoice be reopened, while it may still be paid', async () => {
+    await insertOpenInvoice();
+    await db.pool.query(`UPDATE invoices SET status = 'uncollectible', uncollectible_at = now() WHERE id = 'in_x'`);
+    await expect(db.pool.query(`UPDATE invoices SET status = 'open', attempt_count = 2 WHERE id = 'in_x'`)).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'invoices_status_transition',
+      message: 'invoice in_x cannot move uncollectible -> open',
+    });
+    await db.pool.query(`UPDATE invoices SET status = 'uncollectible', attempt_count = 3 WHERE id = 'in_x'`);
+    await db.pool.query(`UPDATE invoices SET status = 'paid', paid_at = now() WHERE id = 'in_x'`);
+    const { rows } = await db.pool.query(`SELECT status, attempt_count FROM invoices WHERE id = 'in_x'`);
+    expect(rows[0]).toEqual({ status: 'paid', attempt_count: 3 });
   });
 });

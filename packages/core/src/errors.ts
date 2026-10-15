@@ -5,6 +5,7 @@ export type BillingErrorCode =
   | 'unbalanced_transaction'
   | 'not_found'
   | 'invalid_transition'
+  | 'illegal_invoice_transition'
   | 'plan_unavailable'
   | 'interval_mismatch'
   | 'same_plan'
