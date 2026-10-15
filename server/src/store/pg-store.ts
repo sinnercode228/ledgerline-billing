@@ -14,6 +14,7 @@ import {
   type Payment,
   type PaymentMethod,
   type Plan,
+  type RunOptions,
   type Store,
   type StoreTx,
   type Subscription,
@@ -55,10 +56,10 @@ const MAX_ATTEMPTS = 3;
 export class PgStore implements Store {
   constructor(private readonly pool: pg.Pool) {}
 
-  async run<T>(work: (tx: StoreTx) => Promise<T>): Promise<T> {
+  async run<T>(work: (tx: StoreTx) => Promise<T>, options: RunOptions = {}): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.runOnce(work);
+        return await this.runOnce(work, options);
       } catch (error) {
         if (attempt < MAX_ATTEMPTS && isRetryableTransactionError(error)) continue;
         throw translateDatabaseError(error);
@@ -66,11 +67,11 @@ export class PgStore implements Store {
     }
   }
 
-  private async runOnce<T>(work: (tx: StoreTx) => Promise<T>): Promise<T> {
+  private async runOnce<T>(work: (tx: StoreTx) => Promise<T>, { readOnly = false }: RunOptions): Promise<T> {
     const client = await this.pool.connect();
     let broken: Error | undefined;
     try {
-      await client.query('BEGIN');
+      await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
       const result = await work(new PgTx(client));
       await client.query('COMMIT');
       return result;
@@ -392,6 +393,13 @@ class PgTx implements StoreTx {
   }
   async listPaymentsForInvoice(invoiceId: string) {
     const rows = await this.rows<PaymentRow>(`SELECT * FROM payments WHERE invoice_id = $1 ORDER BY attempt`, [invoiceId]);
+    return rows.map(toPayment);
+  }
+  async listPayments(page: Page) {
+    const rows = await this.rows<PaymentRow>(`SELECT * FROM payments ORDER BY invoice_id COLLATE "C", attempt LIMIT $1 OFFSET $2`, [
+      page.limit ?? null,
+      page.offset ?? 0,
+    ]);
     return rows.map(toPayment);
   }
   async updatePayment(p: Payment) {

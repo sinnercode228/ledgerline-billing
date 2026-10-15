@@ -93,6 +93,8 @@ export interface StoreTx {
   findPaymentByProviderId(providerPaymentId: string): Promise<Payment | null>;
   findPaymentByAttempt(invoiceId: string, attempt: number): Promise<Payment | null>;
   listPaymentsForInvoice(invoiceId: string): Promise<Payment[]>;
+  /** Every payment, ordered by invoice and attempt. */
+  listPayments(page: Page): Promise<Payment[]>;
   updatePayment(payment: Payment): Promise<void>;
   /** Locks one pending payment last sent to the provider at or before `cutoff`, skipping locked rows. */
   claimStalePendingPayment(cutoff: Date, skip: readonly string[]): Promise<Payment | null>;
@@ -118,7 +120,18 @@ export interface StoreTx {
   setClock(now: Date): Promise<void>;
 }
 
+export interface RunOptions {
+  /**
+   * The work only reads, and every read sees the same committed state, even
+   * while other transactions commit. PostgreSQL runs it as REPEATABLE READ
+   * READ ONLY: under READ COMMITTED each statement would see the commits made
+   * before it started, so a payment could show in one read and not the next.
+   * Writes in it are refused.
+   */
+  readOnly?: boolean;
+}
+
 export interface Store {
   /** Runs `work` in one transaction: its writes commit together or not at all. Calls must not nest. */
-  run<T>(work: (tx: StoreTx) => Promise<T>): Promise<T>;
+  run<T>(work: (tx: StoreTx) => Promise<T>, options?: RunOptions): Promise<T>;
 }

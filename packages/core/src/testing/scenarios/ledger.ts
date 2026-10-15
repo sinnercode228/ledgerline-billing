@@ -55,6 +55,24 @@ export function ledgerScenarios(factory: StoreFactory): void {
       expect(await world.engine.journal()).toHaveLength(0);
     });
 
+    it('refuses writes in a read-only transaction and keeps none of them', async () => {
+      const world = await BillingWorld.create(store(), at('2026-01-10T00:00:00Z'));
+      const { customer } = await trialingSubscription(world);
+      let read = false;
+      await expect(
+        world.store.run(
+          async (tx) => {
+            const current = await tx.getCustomer(customer.id);
+            read = current !== null;
+            await tx.updateCustomer({ ...current!, name: 'Renamed Tutors' });
+          },
+          { readOnly: true },
+        ),
+      ).rejects.toThrow(/read-only transaction/);
+      expect(read).toBe(true);
+      expect((await world.engine.getCustomer(customer.id)).name).toBe('Northbank Tutors');
+    });
+
     it('refuses to bill the same period twice', async () => {
       const world = await BillingWorld.create(store(), at('2026-01-10T00:00:00Z'));
       const { subscription } = await trialingSubscription(world);
