@@ -3,6 +3,7 @@ import pg from 'pg';
 
 const BY_CONSTRAINT: Record<string, ConstructorParameters<typeof BillingError>[0]> = {
   invoices_one_per_period: 'duplicate_invoice',
+  invoices_status_transition: 'illegal_invoice_transition',
   journal_transaction_balanced: 'unbalanced_transaction',
   journal_entries_transaction_currency_fkey: 'currency_mismatch',
   journal_entries_account_currency_fkey: 'currency_mismatch',

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../../calendar.js';
 import { draftInvoice, finalizeInvoice } from '../../engine/invoicing.js';
+import { isBillingError } from '../../errors.js';
 import { newId } from '../../ids.js';
+import { formatInvoiceNumber, INVOICE_STATUSES, isInvoiceTransitionAllowed, type InvoiceStatus } from '../../invoice.js';
 import { receivableAccount, revenueAccount, type JournalTransaction } from '../../ledger.js';
 import type { StoreTx } from '../../ports/store.js';
 import { at, expectBalancedLedger, useStore, type StoreFactory } from '../harness.js';
@@ -95,6 +97,31 @@ export function ledgerScenarios(factory: StoreFactory): void {
       await world.store.run((tx) => tx.insertInvoice(draft()));
       await expect(world.store.run((tx) => tx.insertInvoice(draft()))).rejects.toMatchObject({ code: 'duplicate_invoice' });
       await world.store.run((tx) => tx.insertInvoice(draftInvoice({ id: newId('in'), subscription, kind: 'proration', ...period, lines: [], now: world.now })));
+    });
+
+    it('saves an invoice status change only when the state machine the engine follows allows it', async () => {
+      const world = await BillingWorld.create(store(), at('2026-01-10T00:00:00Z'));
+      const { subscription } = await trialingSubscription(world);
+      const period = { periodStart: world.now, periodEnd: addDays(world.now, 30) };
+      let sequence = 0;
+      const numberFor = (status: InvoiceStatus) => (status === 'draft' ? null : formatInvoiceNumber(2026, ++sequence));
+      const outcomes: string[] = [];
+      const expected: string[] = [];
+      for (const from of INVOICE_STATUSES) {
+        for (const to of INVOICE_STATUSES) {
+          const draft = draftInvoice({ id: newId('in'), subscription, kind: 'proration', ...period, lines: [], now: world.now });
+          const invoice = { ...draft, status: from, number: numberFor(from) };
+          await world.store.run((tx) => tx.insertInvoice(invoice));
+          const saved = await world.store
+            .run((tx) => tx.updateInvoice({ ...invoice, status: to, number: to === 'draft' ? null : (invoice.number ?? numberFor(to)) }))
+            .then(() => 'saved', (error: unknown) => (isBillingError(error) ? error.code : String(error)));
+          const stored = await world.store.run((tx) => tx.getInvoice(invoice.id));
+          outcomes.push(`${from} -> ${to}: ${saved}, stored ${stored?.status}`);
+          const allowed = from === to || isInvoiceTransitionAllowed(from, to);
+          expected.push(`${from} -> ${to}: ${allowed ? `saved, stored ${to}` : `illegal_invoice_transition, stored ${from}`}`);
+        }
+      }
+      expect(outcomes).toEqual(expected);
     });
 
     it('numbers 20 concurrent finalizations without gaps, even when others roll back', async () => {

@@ -81,7 +81,10 @@ export interface StoreTx {
   /** Rejects with `duplicate_invoice` when a cycle invoice already bills this subscription's period start. */
   insertInvoice(invoice: Invoice): Promise<void>;
   getInvoice(id: string, lock?: Lock): Promise<Invoice | null>;
-  /** Lines are written once on insert; updates change status, amounts and dunning fields. */
+  /**
+   * Lines are written once on insert; updates change status, amounts and dunning fields. Rejects with
+   * `illegal_invoice_transition` when the stored status may not move to the new one (`isInvoiceTransitionAllowed`).
+   */
   updateInvoice(invoice: Invoice): Promise<void>;
   listInvoices(filter: InvoiceFilter): Promise<Invoice[]>;
   /** Next number in the per-year counter; the counter row stays locked until commit, which keeps numbers gapless. */

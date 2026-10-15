@@ -45,6 +45,31 @@ function watchWrittenOffInvoices(store: Store): { store: Store; problems: string
   return { store: { run: (work, options) => store.run((tx) => work(watch(tx)), options) }, problems };
 }
 
+/**
+ * Once armed, saves the given copy of an invoice at the end of the next transaction that writes it off:
+ * the write the retry loop made with the copies it had listed, before it read each invoice again.
+ */
+function saveStaleCopyAfterWriteOff(store: Store): { store: Store; arm(copy: Invoice): void } {
+  let stale: Invoice | null = null;
+  return {
+    arm(copy) {
+      stale = copy;
+    },
+    store: {
+      run: (work) =>
+        store.run(async (tx) => {
+          const result = await work(tx);
+          const copy = stale;
+          if (copy && (await tx.getInvoice(copy.id))?.status === 'uncollectible') {
+            stale = null;
+            await tx.updateInvoice(copy);
+          }
+          return result;
+        }),
+    },
+  };
+}
+
 export function paymentScenarios(factory: StoreFactory): void {
   describe('payments and webhooks', () => {
     const store = useStore(factory);
@@ -286,6 +311,47 @@ export function paymentScenarios(factory: StoreFactory): void {
       const attempts = await Promise.all(invoices.map(async (i) => (await world.engine.getInvoice(i.id)).payments.length));
       expect(attempts.sort()).toEqual([1, 2]);
       expect(watched.problems).toEqual([]);
+      expect(await findInvariantViolations(world)).toEqual([]);
+      await expectBalancedLedger(world.engine);
+    });
+
+    it('refuses a stale copy that reopens a written-off invoice, rolls back that retry and reports it', async () => {
+      const stale = saveStaleCopyAfterWriteOff(store());
+      const world = await BillingWorld.create(stale.store, at('2026-03-10T12:00:00Z'), { dunning: { retryDays: [1] } });
+      const { customer } = await world.customer('Tallowmere Press', 'EUR', 'declined');
+      const subscription = await world.engine.createSubscription({ customerId: customer.id, planId: 'plan_business_monthly' }, world.now);
+      const { customer: other, method } = await world.customer('Fernhill Clinic', 'EUR', 'insufficientFunds');
+      const recovering = await world.engine.createSubscription({ customerId: other.id, planId: 'plan_business_monthly' }, world.now);
+      world.provider.setCardBehaviour(method!.providerToken, 'succeed');
+      // Without a card the retry fails at once, so dunning gives up inside the due-work transaction.
+      await world.store.run(async (tx) => {
+        const current = await tx.getCustomer(customer.id, 'for_update');
+        await tx.updateCustomer({ ...current!, defaultPaymentMethodId: null });
+      });
+      const [invoice] = await world.engine.listInvoices({ subscriptionId: subscription.id });
+      expect(invoice).toMatchObject({ status: 'open', attemptCount: 1, nextRetryAt: at('2026-03-11T12:00:00Z') });
+      stale.arm(invoice!);
+
+      const refused = await world.engine.runDueWork(addDays(world.now, 1));
+      expect(refused.errors).toEqual([{ subscriptionId: subscription.id, message: `invoice ${invoice!.id} cannot move uncollectible -> open` }]);
+      // The other subscription due at the same moment is still retried, and recovers.
+      expect(refused).toMatchObject({ retries: 1, paymentsSucceeded: 1, paymentsFailed: 0, writtenOff: 0, canceled: 0 });
+      expect((await world.engine.getSubscription(recovering.id)).status).toBe('active');
+      // Nothing of the refused step is left: no second attempt, no write-off, the subscription still past due.
+      expect(await world.engine.getInvoice(invoice!.id)).toEqual({ invoice, payments: [expect.objectContaining({ attempt: 1 })] });
+      expect(await world.engine.journal({ kind: 'write_off' })).toEqual([]);
+      expect((await world.engine.getSubscription(subscription.id)).status).toBe('past_due');
+      expect(await findInvariantViolations(world)).toEqual([]);
+
+      const retried = await world.engine.runDueWork(addDays(world.now, 1));
+      expect(retried).toMatchObject({ retries: 1, paymentsFailed: 1, writtenOff: 1, canceled: 1, errors: [] });
+      const { invoice: closed, payments } = await world.engine.getInvoice(invoice!.id);
+      expect(closed.status).toBe('uncollectible');
+      expect(payments.map((p) => [p.attempt, p.failureCode])).toEqual([
+        [1, 'card_declined'],
+        [2, 'payment_method_missing'],
+      ]);
+      expect((await world.engine.journal({ kind: 'write_off' })).map((t) => t.refs.invoiceId)).toEqual([invoice!.id]);
       expect(await findInvariantViolations(world)).toEqual([]);
       await expectBalancedLedger(world.engine);
     });

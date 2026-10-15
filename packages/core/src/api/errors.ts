@@ -8,6 +8,8 @@ const STATUS_BY_CODE: Partial<Record<BillingErrorCode, number>> = {
   invalid_transition: 409,
   // The engine balances every posting itself; reaching the store's check is a bug.
   unbalanced_transaction: 500,
+  // The engine checks every status change it makes; the store refusing one means it saved a stale copy.
+  illegal_invoice_transition: 500,
 };
 
 /** The HTTP status the API answers a billing error with; rule violations are 422. */

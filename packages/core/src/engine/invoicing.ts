@@ -72,9 +72,12 @@ export async function finalizeInvoice(tx: StoreTx, invoice: Invoice, customer: C
   }
 
   const open: Invoice = { ...invoice, ...amounts, number, status: 'open', finalizedAt: now };
-  const finalized: Invoice = amounts.amountDue === 0 ? { ...open, status: 'paid', paidAt: now } : open;
-  await tx.updateInvoice(finalized);
-  return finalized;
+  await tx.updateInvoice(open);
+  if (amounts.amountDue > 0) return open;
+  // Credit covers all of it. Both stores let an invoice become paid only from open, so it is saved open first.
+  const paid: Invoice = { ...open, status: 'paid', paidAt: now };
+  await tx.updateInvoice(paid);
+  return paid;
 }
 
 export async function issueInvoice(

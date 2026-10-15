@@ -46,6 +46,8 @@ export class BillingWorld {
   async advanceTo(to: Date, onDay?: (at: Date, report: DueWorkReport) => Promise<void> | void): Promise<void> {
     await this.engine.advanceClock(to, async (at, report) => {
       this.current = at;
+      // Due work reports a failed step and carries on with the others, so a walk would not notice it otherwise.
+      if (report.errors.length > 0) throw new Error(`due work failed on ${at.toISOString()}: ${JSON.stringify(report.errors)}`);
       await onDay?.(at, report);
     });
     this.current = to;

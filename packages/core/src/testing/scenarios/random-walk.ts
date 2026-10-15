@@ -128,7 +128,8 @@ export function randomWalkScenarios(factory: StoreFactory): void {
           const next = new Date(world.now.getTime() + step);
           if (chance(0.2)) {
             // Two workers racing over the same due work before the clock moves.
-            await Promise.all([engine.runDueWork(next), world.anotherWorker().runDueWork(next)]);
+            const reports = await Promise.all([engine.runDueWork(next), world.anotherWorker().runDueWork(next)]);
+            expect(reports.flatMap((report) => report.errors)).toEqual([]);
           }
           await world.advanceTo(next);
           for (const problem of await findInvariantViolations(world, { capturedLater })) violations.push(`${utcDay(world.now)}: ${problem}`);
