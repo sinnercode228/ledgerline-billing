@@ -3,6 +3,7 @@ import { addDays } from '../../calendar.js';
 import { draftInvoice, finalizeInvoice } from '../../engine/invoicing.js';
 import { newId } from '../../ids.js';
 import { receivableAccount, revenueAccount, type JournalTransaction } from '../../ledger.js';
+import type { StoreTx } from '../../ports/store.js';
 import { at, expectBalancedLedger, useStore, type StoreFactory } from '../harness.js';
 import { BillingWorld } from '../world.js';
 
@@ -55,9 +56,9 @@ export function ledgerScenarios(factory: StoreFactory): void {
       expect(await world.engine.journal()).toHaveLength(0);
     });
 
-    it('refuses writes in a read-only transaction and keeps none of them', async () => {
+    it('refuses writes and row locks in a read-only transaction and keeps none of the writes', async () => {
       const world = await BillingWorld.create(store(), at('2026-01-10T00:00:00Z'));
-      const { customer } = await trialingSubscription(world);
+      const { customer, subscription } = await trialingSubscription(world);
       let read = false;
       await expect(
         world.store.run(
@@ -71,6 +72,19 @@ export function ledgerScenarios(factory: StoreFactory): void {
       ).rejects.toThrow(/read-only transaction/);
       expect(read).toBe(true);
       expect((await world.engine.getCustomer(customer.id)).name).toBe('Northbank Tutors');
+
+      // PostgreSQL refuses SELECT ... FOR UPDATE in a read-only transaction, even when no row matches.
+      const locks: Array<(tx: StoreTx) => Promise<unknown>> = [
+        (tx) => tx.getCustomer(customer.id, 'for_update'),
+        (tx) => tx.getSubscription(subscription.id, 'for_update'),
+        (tx) => tx.getInvoice('in_none', 'for_update'),
+        (tx) => tx.getPayment('pay_none', 'for_update'),
+        (tx) => tx.claimDueSubscription(world.now, []),
+        (tx) => tx.claimStalePendingPayment(world.now, []),
+      ];
+      for (const lock of locks) {
+        await expect(world.store.run(lock, { readOnly: true })).rejects.toThrow(/read-only transaction/);
+      }
     });
 
     it('refuses to bill the same period twice', async () => {

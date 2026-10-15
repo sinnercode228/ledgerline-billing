@@ -9,6 +9,7 @@ import type {
   IdempotencyRecord,
   InvoiceFilter,
   JournalFilter,
+  Lock,
   Page,
   RunOptions,
   Store,
@@ -191,12 +192,17 @@ class MemoryTx implements StoreTx {
     if (this.readOnly) throw new Error('cannot write in a read-only transaction');
   }
 
+  private assertLockable(lock: Lock | undefined): void {
+    if (lock && this.readOnly) throw new Error('cannot lock rows in a read-only transaction');
+  }
+
   async insertCustomer(customer: Customer) {
     this.assertWritable();
     if (this.s.customers.has(customer.id)) throw new BillingError('duplicate_key', `customer ${customer.id} exists`);
     this.s.customers.set(customer.id, copy(customer));
   }
-  async getCustomer(id: string) {
+  async getCustomer(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.customers.get(id) ?? null);
   }
   async updateCustomer(customer: Customer) {
@@ -246,7 +252,8 @@ class MemoryTx implements StoreTx {
     this.requireRow(this.s.plans, subscription.planId);
     this.s.subscriptions.set(subscription.id, copy(subscription));
   }
-  async getSubscription(id: string) {
+  async getSubscription(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.subscriptions.get(id) ?? null);
   }
   async updateSubscription(subscription: Subscription) {
@@ -262,6 +269,7 @@ class MemoryTx implements StoreTx {
     return copy(page(rows.sort(newestFirst), filter));
   }
   async claimDueSubscription(now: Date, skip: readonly string[]) {
+    this.assertLockable('for_update');
     const due = [...this.s.subscriptions.values()]
       .filter((s) => !skip.includes(s.id))
       .filter((s) =>
@@ -288,7 +296,8 @@ class MemoryTx implements StoreTx {
     }
     this.s.invoices.set(invoice.id, copy(invoice));
   }
-  async getInvoice(id: string) {
+  async getInvoice(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.invoices.get(id) ?? null);
   }
   async updateInvoice(invoice: Invoice) {
@@ -321,7 +330,8 @@ class MemoryTx implements StoreTx {
     this.checkPaymentUniqueness(payment);
     this.s.payments.set(payment.id, copy(payment));
   }
-  async getPayment(id: string) {
+  async getPayment(id: string, lock?: Lock) {
+    this.assertLockable(lock);
     return copy(this.s.payments.get(id) ?? null);
   }
   async findPaymentByProviderId(providerPaymentId: string) {
@@ -346,6 +356,7 @@ class MemoryTx implements StoreTx {
     this.s.payments.set(payment.id, copy(payment));
   }
   async claimStalePendingPayment(cutoff: Date, skip: readonly string[]) {
+    this.assertLockable('for_update');
     const stale = [...this.s.payments.values()]
       .filter((p) => p.status === 'pending' && p.lastAttemptAt <= cutoff && !skip.includes(p.id))
       .sort((a, b) => a.lastAttemptAt.getTime() - b.lastAttemptAt.getTime());

@@ -126,7 +126,7 @@ export interface RunOptions {
    * while other transactions commit. PostgreSQL runs it as REPEATABLE READ
    * READ ONLY: under READ COMMITTED each statement would see the commits made
    * before it started, so a payment could show in one read and not the next.
-   * Writes in it are refused.
+   * Writes and row locks (`lock`, the claim methods) in it are refused.
    */
   readOnly?: boolean;
 }
