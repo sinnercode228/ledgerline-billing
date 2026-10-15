@@ -59,7 +59,7 @@ Amounts are integer kopecks. [`proration.ts`](packages/core/src/proration.ts) wo
 
 Retry days come from `LEDGERLINE_DUNNING_RETRY_DAYS` (default `1,3,5`) and count from the first failure, not from the previous attempt ([`dunning.ts`](packages/core/src/dunning.ts)). Retries started by a new card do not use up the schedule: attaching a card or choosing another default retries every failing invoice at once, with trigger `payment_method_updated` ([`customers.ts`](packages/core/src/engine/customers.ts)). When the schedule runs out, `giveUp` writes off what each open invoice of the subscription still owes and ends the subscription ([`payment-results.ts`](packages/core/src/engine/payment-results.ts#L173-L212)).
 
-Write-up on the retry loop that, before commit `b8aabf0`, wrote one invoice off twice while the trial balance stayed at zero, and on the invariants that catch it: [The trial balance was zero and the invoice was written off twice](https://github.com/sinnercode228/sinnercode228/blob/main/notes/ledgerline-balanced-but-wrong.md).
+Write-up on the retry loop that, before commit `b8aabf0`, wrote one invoice off twice while the trial balance stayed at zero, and on the invariants that catch it: [The trial balance was zero and the invoice was written off twice](https://github.com/sinnercode228/sinnercode228/blob/main/notes/ledgerline-balanced-but-wrong.md). Since migration 004 both stores also refuse the write that reopened the invoice; the rule is in the next section.
 
 ## Why the trial balance stays at zero
 
@@ -74,12 +74,13 @@ CREATE CONSTRAINT TRIGGER journal_entries_balanced
 
 The trigger function calls `ledger_assert_balanced`, which counts and sums the transaction's entries and raises `check_violation` with constraint `journal_transaction_balanced` unless there are at least two and they sum to zero. A CHECK cannot look at other rows, and a trigger that fired right away would reject the first entry of every transaction, since nothing balances after one entry. Deferred to COMMIT, entries go in one by one, and if they do not add up the whole transaction rolls back, the invoice and payment rows with it. A second deferred trigger, on `journal_transactions`, catches a header that never got entries. [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) inserts +500 and −400 by hand: both inserts succeed, COMMIT fails with "entries sum to 100", and no entry is left.
 
-The same migration and [`001_schema.sql`](server/migrations/001_schema.sql) add the other rules:
+The same migration, [`001_schema.sql`](server/migrations/001_schema.sql) and the later migrations add the other rules:
 
 - The ledger is append-only: UPDATE, DELETE and TRUNCATE on both journal tables raise `restrict_violation`. A correction is a mirror transaction with `reversesId` pointing at the original.
 - One currency per transaction is structural: an entry carries the currency, with foreign keys on `(transaction_id, currency)` and `(account_id, currency)`.
 - Invoice lines cannot be changed, a deferred trigger checks that they sum to the invoice total, and a CHECK keeps `amount_due = total - credit_applied`.
 - Payment status only moves forward (`payments_status_forward_only`), and a partial unique index allows one pending payment per invoice.
+- Invoice status moves only along the state machine in [`invoice.ts`](packages/core/src/invoice.ts): `draft → open`, `open → paid | void | uncollectible`, and `uncollectible → paid` when the money arrives after a write-off. The engine checks each change it makes against the copy it holds. Since [migration 004](server/migrations/004_invoice_status_transitions.sql) a `BEFORE UPDATE` trigger also checks it against the stored row and raises `check_violation` with constraint `invoices_status_transition`, so a stale copy cannot reopen a written-off invoice. In due work the refusal rolls back that subscription's step and is listed in the run's `errors`; the API answers it with `500 internal_error`. The scenario "saves an invoice status change only when the state machine the engine follows allows it" walks all 25 pairs of statuses on both stores.
 - Invoice numbers come from a per-year counter row: `INSERT ... ON CONFLICT (year) DO UPDATE SET last_number = invoice_counters.last_number + 1 RETURNING last_number`. The row stays locked until COMMIT, so a concurrent finalization waits and a rollback gives the number back. The scenario "numbers 20 concurrent finalizations without gaps, even when others roll back" runs on both stores.
 - One cycle invoice per subscription and period start, a partial unique index since migration 003. Proration invoices are left out of it, because two plan changes can share an instant on the test clock.
 
@@ -117,7 +118,7 @@ The engine never reads the wall clock. Every method takes `now`, and the server 
 
 More from the demo: [the overview after "+1 week"](docs/screenshots/overview-after-a-week.png), [the webhook log](docs/screenshots/webhooks.png), [a past-due subscription on a phone, in Russian](docs/screenshots/phone-past-due-ru.png).
 
-What every store must do is one suite of 35 scenarios in [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). The core runs it on `MemoryStore`; the server runs it on `PgStore` with a freshly migrated schema per test ([`database.ts`](server/test/helpers/database.ts)).
+What every store must do is one suite of 37 scenarios in [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). The core runs it on `MemoryStore`; the server runs it on `PgStore` with a freshly migrated schema per test ([`database.ts`](server/test/helpers/database.ts)).
 
 ## Payrail webhooks: signatures, duplicates, late answers
 
@@ -167,7 +168,7 @@ npm ci
 psql postgres://postgres:postgres@localhost:5432/postgres -c 'CREATE DATABASE ledgerline_dev'
 cp .env.example .env    # set LEDGERLINE_API_KEY and LEDGERLINE_WEBHOOK_SECRET (openssl rand -hex 32), LEDGERLINE_TEST_CLOCK=1
 npm run build:server
-npm run migrate         # migrations 001-003 and the plan catalog
+npm run migrate         # migrations 001-004 and the plan catalog
 npm run seed            # 120 days of history for 13 customers on the test clock
 npm run serve           # API on http://localhost:3000
 npm run worker          # second terminal: due work every 60 s
@@ -200,7 +201,7 @@ LEDGERLINE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ledgerl
 npm run lint && npm run typecheck
 ```
 
-234 Vitest tests in 38 files, counted from Vitest's JSON reporter: 102 in `packages/core` (15 files), 83 in `server` (9 files) and 49 in `web` (14 files). Of those, 70 are the 35 shared scenarios, once on each store, the two random walks included. fast-check property tests cover proration (a full period gives the price, a credit never exceeds what was paid over any sequence of plan changes, lines sum to the total), `mulDivFloor` against the exact rational value, the calendar and the trial balance. Six tests in [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) write rows by hand to check the triggers and keys above. The HTTP tests go through Fastify's `inject` on both stores: auth, validation, `Idempotency-Key`, signatures that are good, expired, tampered or made with the previous secret, the 400-day clock limit and CORS. The web tests run in jsdom: the demo world, the plan change dialog, the clock bar, persistence, i18n and formatting. Without `LEDGERLINE_TEST_DATABASE_URL`, core and server run 132 tests and skip 41.
+241 Vitest tests in 38 files, counted from Vitest's JSON reporter: 106 in `packages/core` (15 files), 86 in `server` (9 files) and 49 in `web` (14 files). Of those, 74 are the 37 shared scenarios, once on each store, the two random walks included. fast-check property tests cover proration (a full period gives the price, a credit never exceeds what was paid over any sequence of plan changes, lines sum to the total), `mulDivFloor` against the exact rational value, the calendar and the trial balance. Seven tests in [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) write rows by hand to check the triggers and keys above. The HTTP tests go through Fastify's `inject` on both stores: auth, validation, `Idempotency-Key`, signatures that are good, expired, tampered or made with the previous secret, the 400-day clock limit and CORS. The web tests run in jsdom: the demo world, the plan change dialog, the clock bar, persistence, i18n and formatting. Without `LEDGERLINE_TEST_DATABASE_URL`, core and server run 136 tests and skip 44.
 
 [`ci.yml`](.github/workflows/ci.yml) runs lint, `tsc -b`, the core and server tests against a `postgres:16-alpine` service and the server build in one job, and the dashboard's lint, typecheck, tests and both builds, for a server and for the demo, in another.
 

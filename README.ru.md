@@ -59,7 +59,7 @@ api /v1/test-clock/advance -d '{"days":14}'   # пробный период ко
 
 Дни повторов берутся из `LEDGERLINE_DUNNING_RETRY_DAYS` (по умолчанию `1,3,5`) и отсчитываются от первой неудачи, а не от предыдущей попытки ([`dunning.ts`](packages/core/src/dunning.ts)). Повторы из-за новой карты расписание не расходуют: привязка карты или выбор другой карты по умолчанию сразу повторяет все неоплаченные счета с триггером `payment_method_updated` ([`customers.ts`](packages/core/src/engine/customers.ts)). Когда расписание кончается, `giveUp` списывает остаток долга по каждому открытому счёту подписки и завершает её ([`payment-results.ts`](packages/core/src/engine/payment-results.ts#L173-L212)).
 
-Разбор цикла повторов, который до коммита `b8aabf0` списывал один счёт дважды, а оборотная ведомость оставалась в нуле, и инвариантов, которые это ловят: [Оборотная ведомость сходилась в ноль, а счёт списали дважды](https://github.com/sinnercode228/sinnercode228/blob/main/notes/ledgerline-balanced-but-wrong.ru.md).
+Разбор цикла повторов, который до коммита `b8aabf0` списывал один счёт дважды, а оборотная ведомость оставалась в нуле, и инвариантов, которые это ловят: [Оборотная ведомость сходилась в ноль, а счёт списали дважды](https://github.com/sinnercode228/sinnercode228/blob/main/notes/ledgerline-balanced-but-wrong.ru.md). С миграции 004 оба хранилища отказываются и от той записи, которая снова открыла счёт; правило описано в следующем разделе.
 
 ## Почему оборотная ведомость всегда сходится
 
@@ -74,12 +74,13 @@ CREATE CONSTRAINT TRIGGER journal_entries_balanced
 
 Функция триггера вызывает `ledger_assert_balanced`: та считает строки операции и их сумму и бросает `check_violation` с ограничением `journal_transaction_balanced`, если строк меньше двух или сумма не ноль. CHECK не видит другие строки, а триггер, сработавший сразу, отверг бы первую же строку любой операции: после одной строки ничего не сходится. Отложенный до COMMIT, он позволяет вставлять строки по одной, а если они не сошлись, откатывается вся транзакция вместе со счетами и платежами. Второй отложенный триггер, на `journal_transactions`, ловит заголовок операции, к которому так и не добавили строк. [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) вручную вставляет +500 и −400: обе вставки проходят, COMMIT падает с «entries sum to 100», и ни одной строки не остаётся.
 
-Та же миграция и [`001_schema.sql`](server/migrations/001_schema.sql) добавляют остальные правила:
+Та же миграция, [`001_schema.sql`](server/migrations/001_schema.sql) и следующие миграции добавляют остальные правила:
 
 - Журнал только дописывается: UPDATE, DELETE и TRUNCATE на обеих таблицах журнала дают `restrict_violation`. Исправление — зеркальная операция, у которой `reversesId` указывает на исходную.
 - Одна валюта на операцию обеспечена структурой: строка журнала хранит валюту, а внешние ключи идут по `(transaction_id, currency)` и `(account_id, currency)`.
 - Строки счёта менять нельзя, отложенный триггер проверяет, что они дают в сумме итог счёта, а CHECK держит `amount_due = total - credit_applied`.
 - Статус платежа двигается только вперёд (`payments_status_forward_only`), а частичный индекс UNIQUE допускает не больше одного платежа в ожидании на счёт.
+- Статус счёта меняется только по машине состояний из [`invoice.ts`](packages/core/src/invoice.ts): `draft → open`, `open → paid | void | uncollectible` и `uncollectible → paid`, когда деньги пришли уже после списания. Движок проверяет каждое своё изменение по копии, которую держит. С [миграции 004](server/migrations/004_invoice_status_transitions.sql) триггер `BEFORE UPDATE` проверяет его ещё и по сохранённой строке и бросает `check_violation` с ограничением `invoices_status_transition`, так что устаревшая копия не откроет заново списанный счёт. В наступившей работе такой отказ откатывает шаг этой подписки и попадает в `errors` прогона; API отвечает на него `500 internal_error`. Сценарий «saves an invoice status change only when the state machine the engine follows allows it» проходит все 25 пар статусов на обоих хранилищах.
 - Номер счёта берётся из строки-счётчика на год: `INSERT ... ON CONFLICT (year) DO UPDATE SET last_number = invoice_counters.last_number + 1 RETURNING last_number`. Строка заблокирована до COMMIT, так что параллельная финализация ждёт, а откат возвращает номер. Сценарий «numbers 20 concurrent finalizations without gaps, even when others roll back» гоняется на обоих хранилищах.
 - Один счёт за период на подписку и начало периода — частичный индекс UNIQUE из миграции 003. Счета на пересчёт в него не входят: на тестовых часах две смены тарифа могут прийтись на одно мгновение.
 
@@ -117,7 +118,7 @@ flowchart TB
 
 Ещё из демо: [обзор после «+1 неделя»](docs/screenshots/overview-after-a-week.png), [журнал вебхуков](docs/screenshots/webhooks.png), [просроченная подписка на телефоне, по-русски](docs/screenshots/phone-past-due-ru.png).
 
-Что должно уметь любое хранилище, записано одним набором из 35 сценариев в [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). Ядро гоняет его на `MemoryStore`, сервер — на `PgStore`, каждому тесту своя свежая схема с миграциями ([`database.ts`](server/test/helpers/database.ts)).
+Что должно уметь любое хранилище, записано одним набором из 37 сценариев в [`packages/core/src/testing/scenarios`](packages/core/src/testing/scenarios). Ядро гоняет его на `MemoryStore`, сервер — на `PgStore`, каждому тесту своя свежая схема с миграциями ([`database.ts`](server/test/helpers/database.ts)).
 
 ## Вебхуки Payrail: подпись, повторы, поздние ответы
 
@@ -167,7 +168,7 @@ npm ci
 psql postgres://postgres:postgres@localhost:5432/postgres -c 'CREATE DATABASE ledgerline_dev'
 cp .env.example .env    # задать LEDGERLINE_API_KEY и LEDGERLINE_WEBHOOK_SECRET (openssl rand -hex 32), LEDGERLINE_TEST_CLOCK=1
 npm run build:server
-npm run migrate         # миграции 001-003 и каталог тарифов
+npm run migrate         # миграции 001-004 и каталог тарифов
 npm run seed            # 120 дней истории для 13 клиентов на тестовых часах
 npm run serve           # API на http://localhost:3000
 npm run worker          # во втором терминале: наступившая работа раз в 60 с
@@ -200,7 +201,7 @@ LEDGERLINE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ledgerl
 npm run lint && npm run typecheck
 ```
 
-234 теста Vitest в 38 файлах, посчитано по JSON-отчёту Vitest: 102 в `packages/core` (15 файлов), 83 в `server` (9 файлов) и 49 в `web` (14 файлов). Из них 70 — это 35 общих сценариев, по разу на каждом хранилище, включая два случайных блуждания. Тесты свойств на fast-check покрывают пересчёт (полный период даёт цену, возврат никогда не больше оплаченного при любой цепочке смен тарифа, строки дают итог счёта), `mulDivFloor` против точного рационального значения, календарь и оборотную ведомость. Шесть тестов в [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) вручную пишут строки в PostgreSQL, чтобы проверить триггеры и ключи, описанные выше. HTTP-тесты идут через `inject` Fastify на обоих хранилищах: авторизация, валидация, `Idempotency-Key`, подписи верные, просроченные, подделанные и сделанные прежним секретом, лимит в 400 дней для часов и CORS. Тесты web работают в jsdom: мир демо, диалог смены тарифа, панель часов, сохранение, i18n и форматирование. Без `LEDGERLINE_TEST_DATABASE_URL` ядро и сервер выполняют 132 теста и пропускают 41.
+241 тест Vitest в 38 файлах, посчитано по JSON-отчёту Vitest: 106 в `packages/core` (15 файлов), 86 в `server` (9 файлов) и 49 в `web` (14 файлов). Из них 74 — это 37 общих сценариев, по разу на каждом хранилище, включая два случайных блуждания. Тесты свойств на fast-check покрывают пересчёт (полный период даёт цену, возврат никогда не больше оплаченного при любой цепочке смен тарифа, строки дают итог счёта), `mulDivFloor` против точного рационального значения, календарь и оборотную ведомость. Семь тестов в [`ledger-constraints.test.ts`](server/test/ledger-constraints.test.ts) вручную пишут строки в PostgreSQL, чтобы проверить триггеры и ключи, описанные выше. HTTP-тесты идут через `inject` Fastify на обоих хранилищах: авторизация, валидация, `Idempotency-Key`, подписи верные, просроченные, подделанные и сделанные прежним секретом, лимит в 400 дней для часов и CORS. Тесты web работают в jsdom: мир демо, диалог смены тарифа, панель часов, сохранение, i18n и форматирование. Без `LEDGERLINE_TEST_DATABASE_URL` ядро и сервер выполняют 136 тестов и пропускают 44.
 
 [`ci.yml`](.github/workflows/ci.yml) в одном job гоняет lint, `tsc -b`, тесты ядра и сервера на сервисе `postgres:16-alpine` и сборку сервера, а в другом — lint, проверку типов, тесты и обе сборки дашборда, для сервера и для демо.
 

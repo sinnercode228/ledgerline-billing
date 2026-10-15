@@ -89,7 +89,7 @@ A plan change keeps the billing interval. The preview returns exactly what apply
 | `GET /v1/invoices/:id` | invoice with `lines[]` and `payments[]` |
 | `POST /v1/invoices/:id/refund` | refunds the card payment of a paid invoice; repeating it is harmless |
 
-`status` is `draft`, `open`, `paid`, `void` or `uncollectible`. `number` (`LL-2026-000123`) is assigned when the invoice is finalized, from a per-year counter with no gaps. Amounts: `total` (sum of `lines`), `creditApplied`, `amountDue = total - creditApplied`, `amountPaid`, `amountRefunded`. Dunning fields: `attemptCount`, `firstFailedAt`, `nextRetryAt`, `scheduledRetries`.
+`status` is `draft`, `open`, `paid`, `void` or `uncollectible`. It moves only `draft -> open`, `open -> paid | void | uncollectible` and `uncollectible -> paid` (a payment that arrives after the write-off). Both stores refuse any other change of a saved invoice; since the engine checks its own changes first, only a bug can reach that check, and the API answers it with `500 internal_error`. `number` (`LL-2026-000123`) is assigned when the invoice is finalized, from a per-year counter with no gaps. Amounts: `total` (sum of `lines`), `creditApplied`, `amountDue = total - creditApplied`, `amountPaid`, `amountRefunded`. Dunning fields: `attemptCount`, `firstFailedAt`, `nextRetryAt`, `scheduledRetries`.
 
 A failed payment makes the subscription `past_due` and schedules retries 1, 3 and 5 days after the first failure (`LEDGERLINE_DUNNING_RETRY_DAYS`). After the last one the invoice becomes `uncollectible`, the remainder is written off and the subscription is `canceled`.
 
@@ -142,4 +142,4 @@ The clock moves one day at a time and runs due work at every step, so a renewal 
 }
 ```
 
-`canceled` counts subscriptions that ended at their period end and those dunning canceled after the last retry; `writtenOff` counts invoices made uncollectible; `recoveredPayments` counts pending payments asked about again.
+`canceled` counts subscriptions that ended at their period end and those dunning canceled after the last retry; `writtenOff` counts invoices made uncollectible; `recoveredPayments` counts pending payments asked about again. `errors` lists `{ subscriptionId, message }` for each subscription whose step failed, for example because a store refused an invoice status change. That step is rolled back as a whole, the other subscriptions are still processed, and the next run picks the failed one up again.
