@@ -8,6 +8,7 @@ import type { PayrailEvent } from '../payrail/events.js';
 import type { Plan } from '../plans.js';
 import type { CardDetails } from '../ports/provider.js';
 import type { InvoiceFilter, JournalFilter, Page, Store, SubscriptionFilter } from '../ports/store.js';
+import { reconcile, type ReconcileReport } from '../reconcile.js';
 import type { Subscription } from '../subscription.js';
 import type { WebhookEventRecord } from '../webhook-events.js';
 import { createContext, type EngineContext, type EngineOptions } from './context.js';
@@ -142,6 +143,10 @@ export class BillingEngine {
 
   async trialBalance(): Promise<TrialBalance> {
     return trialBalance(await this.ledgerAccounts());
+  }
+
+  reconcile(): Promise<ReconcileReport> {
+    return reconcile(this.ctx.store);
   }
 
   listWebhookEvents(page: Page = {}): Promise<WebhookEventRecord[]> {
