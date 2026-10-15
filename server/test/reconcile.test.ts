@@ -1,6 +1,5 @@
 import { BillingEngine, FakePayrail, seedDemo } from '@ledgerline/core';
-import { afterEach, beforeEach, expect, it } from 'vitest';
-import { reconcileDatabase } from '../src/reconcile.js';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { auth, createTestApp } from './helpers/app.js';
 import { createTestDatabase, describeWithDatabase, type TestDatabase } from './helpers/database.js';
 
@@ -13,10 +12,35 @@ describeWithDatabase('reconciling a PostgreSQL database', () => {
   });
   afterEach(() => db.close());
 
-  async function reconcileCommand(): Promise<{ exitCode: number; lines: string[] }> {
+  /**
+   * Runs the command's entry point, server/src/cli/reconcile.ts, in this process with
+   * LEDGERLINE_DATABASE_URL pointing at the test schema, and returns what it printed
+   * and the exit code it set. It reports the end only through process.exitCode.
+   */
+  async function reconcileCommand(): Promise<{ exitCode: typeof process.exitCode; lines: string[] }> {
     const lines: string[] = [];
-    const exitCode = await reconcileDatabase(db.url, (line) => lines.push(line));
-    return { exitCode, lines };
+    const saved = process.exitCode;
+    vi.stubEnv('LEDGERLINE_DATABASE_URL', db.url);
+    vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    process.exitCode = undefined;
+    vi.resetModules();
+    try {
+      await import('../src/cli/reconcile.js');
+      const exitCode = await vi.waitFor(
+        () => {
+          expect(process.exitCode).toBeDefined();
+          return process.exitCode;
+        },
+        { timeout: 15_000 },
+      );
+      return { exitCode, lines };
+    } finally {
+      process.exitCode = saved;
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    }
   }
 
   async function getReconcile(headers: Record<string, string> = auth) {
