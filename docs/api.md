@@ -101,10 +101,37 @@ A failed payment makes the subscription `past_due` and schedules retries 1, 3 an
 | `GET /v1/ledger/journal?accountId&invoiceId&kind` | journal transactions with their `entries[]`, newest first |
 | `GET /v1/ledger/trial-balance` | `{ balanced, currencies: [{ currency, debits, credits, net }] }` |
 | `GET /v1/metrics?days=30` | MRR per currency, subscription counts, churn in the last 30 days, revenue by day |
+| `GET /v1/reconcile` | `{ checked, violations: [{ rule, message }] }`: the books compared with the invoices and payments |
 
 Accounts: `receivable:<customerId>`, `customer_credit:<customerId>`, `revenue:<currency>`, `provider_clearing:<currency>`, `bad_debt:<currency>`. Entries are signed, debit positive. Journal `kind`: `invoice_finalized`, `payment_succeeded`, `credit_applied`, `downgrade_credit`, `write_off`, `refund`, `overpayment_credit`, `reversal`.
 
 MRR counts active and past-due subscriptions, yearly plans as a twelfth, trials not at all.
+
+`GET /v1/reconcile` runs the checks of `npm run reconcile`. It reads every customer, subscription, invoice, payment and account balance, and the refund and downgrade credit transactions, in one read-only snapshot, so commits made meanwhile by the worker are not half seen, and compares them in memory; it is meant for a database of the demo's size. The answer is `200` whether or not anything disagrees. After a second write-off of an invoice that was already written off:
+
+```json
+{
+  "checked": { "customers": 13, "subscriptions": 13, "invoices": 31, "payments": 37, "accounts": 31 },
+  "violations": [
+    { "rule": "receivable", "message": "customer Tundra Freight Ops: receivable -99000, open invoices owe 0" },
+    { "rule": "bad_debt", "message": "RUB bad debt 198000, uncollectible invoices owe 99000" }
+  ]
+}
+```
+
+| `rule` | What must hold |
+| --- | --- |
+| `trial_balance` | debits equal credits in each currency |
+| `invoice_amounts` | the lines sum to `total`, `amountDue = total - creditApplied`, `creditApplied` is between 0 and `total`, `amountPaid` between 0 and `amountDue`, `amountRefunded` between 0 and `amountPaid` |
+| `invoice_status` | a `paid` invoice owes nothing, an `open` one owes something |
+| `invoice_payments` | one payment per attempt, at most one of them pending |
+| `receivable` | each customer's receivable equals what their open invoices still owe |
+| `customer_credit` | no customer credit account has a debit balance |
+| `provider_clearing` | per currency, the clearing balance equals succeeded payments less refunds |
+| `revenue` | per currency, revenue equals the totals of finalized invoices less downgrade credits and refunds |
+| `bad_debt` | per currency, bad debt equals what the `uncollectible` invoices still owe |
+| `subscription_status` | a `past_due` subscription has an open invoice whose payment failed, an `active` or `trialing` one has none, a `canceled` one has no open invoice without a payment in flight |
+| `subscription_periods` | each cycle invoice of a subscription starts where the previous one ended |
 
 ## Webhooks
 
