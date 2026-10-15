@@ -25,6 +25,7 @@
     "clean": "tsc -b tsconfig.json --clean",
     "migrate": "node --env-file-if-exists=.env server/dist/cli/migrate.js",
     "seed": "node --env-file-if-exists=.env server/dist/cli/seed.js",
+    "reconcile": "node --env-file-if-exists=.env server/dist/cli/reconcile.js",
     "serve": "node --env-file-if-exists=.env server/dist/cli/serve.js",
     "worker": "node --env-file-if-exists=.env server/dist/cli/worker.js"
   },

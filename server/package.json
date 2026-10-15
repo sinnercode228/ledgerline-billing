@@ -9,6 +9,7 @@
     "test": "vitest run",
     "migrate": "node dist/cli/migrate.js",
     "seed": "node dist/cli/seed.js",
+    "reconcile": "node dist/cli/reconcile.js",
     "serve": "node dist/cli/serve.js",
     "worker": "node dist/cli/worker.js"
   },
