@@ -1,5 +1,8 @@
 # Ledgerline
 
+> This project is archived and no longer maintained; it was a standalone project built on sample data.
+> The technical write-up now lives in my profile repository: [ledgerline-balanced-but-wrong.md](https://github.com/sinnercode228/sinnercode228/blob/main/notes/ledgerline-balanced-but-wrong.md).
+
 [![CI](https://github.com/sinnercode228/ledgerline-billing/actions/workflows/ci.yml/badge.svg)](https://github.com/sinnercode228/ledgerline-billing/actions/workflows/ci.yml)
 
 Русская версия: [README.ru.md](README.ru.md)
